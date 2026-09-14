@@ -1,0 +1,400 @@
+import { useState, useEffect, useMemo } from "react";
+import {
+  Camera,
+  QrCode,
+  ScanLine,
+  ArrowRight,
+  Loader2,
+  CheckCircle2,
+} from "lucide-react";
+import { useDemoAuth } from "../hooks/useDemoAuth.js";
+import { yardApi } from "../services/api.js";
+import StatusBadge from "../components/StatusBadge.jsx";
+import { pushAlert } from "../components/AlertCenter.jsx";
+
+const MANIFEST_PLATES = [
+  "KCA 123X",
+  "KDB 456Y",
+  "KEC 789Z",
+  "KFD 321A",
+  "KGE 654B",
+  "KHF 987C",
+  "KJG 246D",
+  "KKH 135E",
+  "KMJ 864F",
+  "KNK 753G",
+];
+
+const rnd = (chars) => chars[Math.floor(Math.random() * chars.length)];
+
+function PlateReadout({ text, locked, status, conf }) {
+  const raw = (text || "").padEnd(8, "·").slice(0, 8).split("");
+  return (
+    <div className="absolute bottom-[15%] left-1/2 z-10 -translate-x-1/2">
+      <div
+        className={`rounded-md px-3 py-1.5 font-mono text-sm font-bold tracking-[0.4em] transition-all duration-300 ${
+          status === "ok"
+            ? "bg-emerald-400 text-emerald-950 shadow-[0_0_22px_rgba(16,185,129,0.65)]"
+            : status === "no"
+              ? "bg-red-500 text-red-950"
+              : "bg-white/95 text-slate-900"
+        }`}
+      >
+        {raw.map((c, i) => {
+          if (c === "·")
+            return (
+              <span key={i} className="opacity-30">·</span>
+            );
+          if (status === "ok" || status === "no") return <span key={i}>{c}</span>;
+          if (i < locked)
+            return (
+              <span key={i} className="text-kpc-green">{c}</span>
+            );
+          return (
+            <span key={i} className="opacity-60">
+              {i % 2 ? rnd("1234567890") : rnd("ABCDEFGHJKMNPQRSTUVWXZ")}
+            </span>
+          );
+        })}
+      </div>
+      <div className="mt-1 text-center font-mono text-[9px] tracking-widest text-white/50">
+        {status === "ok" ? `READ OK · ${conf}% CONF` : status === "no" ? "NO READ" : "READING…"}
+      </div>
+    </div>
+  );
+}
+
+export default function GateKiosk() {
+  const auth = useDemoAuth("gate-officer", "Gate Operator");
+  const [regNo, setRegNo] = useState("");
+  const [plate, setPlate] = useState(null);
+  const [entry, setEntry] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [scanResult, setScanResult] = useState(null);
+
+  const [driveTick, setDriveTick] = useState(0);
+  const [recording, setRecording] = useState(false);
+  const [lockedChars, setLockedChars] = useState(0);
+  const [readInfo, setReadInfo] = useState(null);
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const decodeTarget = (regNo.trim() || plate || "").toUpperCase();
+
+  async function capture() {
+    if (!regNo.trim()) return;
+    setBusy(true);
+    setRecording(true);
+    setLockedChars(0);
+    setReadInfo(null);
+    setDriveTick((t) => t + 1);
+    const target = regNo.trim().toUpperCase();
+    const iv = setInterval(() => setLockedChars((n) => Math.min(n + 1, target.length)), 135);
+    try {
+      const result = await yardApi.gateEntry({ regNo: target, depot: "MBA" });
+      setEntry(result);
+      setPlate(result.truck.regNo);
+      localStorage.setItem("kpc_latest_token", result.token);
+      setReadInfo({ ok: true, conf: 94 + Math.floor(Math.random() * 5) });
+      pushAlert({
+        tone: result.manifestVerified ? "success" : "warning",
+        title: "ANPR Token Issued",
+        message: `${result.token} — ${result.truck.regNo}`,
+      });
+    } catch (err) {
+      setReadInfo({ ok: false });
+      pushAlert({ tone: "error", title: "Gate Capture Failed", message: err.message });
+    } finally {
+      clearInterval(iv);
+      setLockedChars(target.length);
+      setRecording(false);
+      setBusy(false);
+    }
+  }
+
+  const filtered = useMemo(
+    () => MANIFEST_PLATES.filter((p) => p.toLowerCase().includes(regNo.toLowerCase())),
+    [regNo],
+  );
+
+  async function capture() {
+    if (!regNo.trim()) return;
+    setBusy(true);
+    try {
+      const result = await yardApi.gateEntry({ regNo: regNo.trim().toUpperCase(), depot: "MBA" });
+      setEntry(result);
+      setPlate(result.truck.regNo);
+      localStorage.setItem("kpc_latest_token", result.token);
+      pushAlert({
+        tone: result.manifestVerified ? "success" : "warning",
+        title: "ANPR Token Issued",
+        message: `${result.token} — ${result.truck.regNo}`,
+      });
+    } catch (err) {
+      pushAlert({ tone: "error", title: "Gate Capture Failed", message: err.message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runCheckpoint(checkpoint) {
+    if (!entry) return;
+    setBusy(true);
+    try {
+      const result = await yardApi.scanCheckpoint({
+        token: entry.truck.token,
+        checkpoint,
+      });
+      setScanResult(result);
+      if (result.allocation) {
+        pushAlert({
+          tone: "success",
+          title: "AI Bay Assigned",
+          message: `${entry.truck.regNo} → ${result.allocation.assignment.bayId} (ETA ~${result.allocation.assignment.etaMinutes} min)`,
+        });
+      } else {
+        pushAlert({
+          tone: checkpoint === "WEIGHBRIDGE" ? "warning" : "success",
+          title: `RFID @ ${checkpoint}`,
+          message: `${entry.truck.token}`,
+        });
+      }
+    } catch (err) {
+      pushAlert({ tone: "error", title: "Scanner Error", message: err.message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mx-auto max-w-6xl space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Gate Kiosk — ANPR Entry</h1>
+          <p className="text-sm text-slate-400">
+            Camera capture → manifest validation → digital token issuance
+          </p>
+        </div>
+        <StatusBadge pulse status={auth.ready ? "ACTIVE" : "WAITING"} />
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* ANPR camera simulation */}
+        <div className="card space-y-4">
+          <div className="flex items-center gap-2 text-sm font-semibold text-slate-300">
+            <Camera className="h-4 w-4" /> ANPR Camera 01 — Main Gate
+          </div>
+
+          <div className="anpr-scene aspect-video">
+            <div className="anpr-road" />
+
+            <div key={driveTick} className={`anpr-truck ${recording ? "enter" : "cruise"}`}>
+              <svg viewBox="0 0 210 62" className="h-full w-full" role="img" aria-label="KPC fuel tanker driving">
+                <defs>
+                  <linearGradient id="tank" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0" stopColor="#0D7E43" />
+                    <stop offset="1" stopColor="#0B6B3A" />
+                  </linearGradient>
+                </defs>
+                <ellipse cx="32" cy="29" rx="13" ry="12" fill="#ffffff" opacity="0.05" />
+                <rect x="6" y="15" width="116" height="27" rx="13.5" fill="url(#tank)" />
+                <rect x="6" y="15" width="116" height="8" rx="4" fill="#ffffff" opacity="0.18" />
+                <text x="64" y="34.5" textAnchor="middle" fontSize="14" fontWeight="800" fontStyle="italic"
+                  fill="#ffffff" fontFamily="ui-monospace, SFMono-Regular, monospace" letterSpacing="2">
+                  KPC
+                </text>
+                <text x="64" y="39.5" textAnchor="middle" fontSize="5" fill="#ffffff" opacity="0.65"
+                  fontFamily="ui-monospace, SFMono-Regular, monospace" letterSpacing="1">
+                  KENYA PIPELINE CO.
+                </text>
+                <rect x="98" y="20" width="10" height="10" fill="#F59E0B" stroke="#111111" strokeWidth="1.2" />
+                <rect x="5" y="23" width="3" height="6" fill="#DC2626" />
+
+                <path d="M124 15 h32 q-12 13 -8 28 h-24 Z" fill="#0F2C1A" />
+                <rect x="144" y="15" width="50" height="28" rx="5" fill="#0F2C1A" />
+                <path d="M142 15 h7 q-3 12 2 28 h-7 q-4 -14 -2 -28 Z" fill="#0E2726" />
+                <path d="M176 16 L196 20 L196 31 L170 31 Q174 22 176 16Z" fill="#9FD8C6" opacity="0.35" />
+                <rect x="150" y="6" width="5" height="11" fill="#475569" />
+                <rect x="149.5" y="5" width="6" height="3" rx="1.5" fill="#64748B" />
+
+                <rect x="6" y="41" width="188" height="3" fill="#0A1F13" />
+                <rect x="188" y="38" width="8" height="6" rx="2" fill="#334155" />
+                <rect x="190" y="27" width="3" height="4" fill="#FBBF24" />
+                <rect x="186" y="34" width="3" height="8" fill="#1E293B" />
+
+                {[
+                  { x: 30, y: 46 },
+                  { x: 52, y: 46 },
+                  { x: 150, y: 46 },
+                  { x: 170, y: 46 },
+                ].map((w, i) => (
+                  <g key={i} transform={`translate(${w.x} ${w.y})`} className="anpr-wheel">
+                    <circle r="8.5" fill="#0A0A0A" stroke="#1F2937" strokeWidth="1.5" />
+                    {[0, 90, 180, 270].map((a) => (
+                      <line key={a} x1="0" y1="0" x2={Math.cos((a * Math.PI) / 180) * 6}
+                        y2={Math.sin((a * Math.PI) / 180) * 6} stroke="#475569" strokeWidth="1.5" />
+                    ))}
+                    <circle r="3.2" fill="#CBD5E1" />
+                  </g>
+                ))}
+              </svg>
+            </div>
+
+            <div className="anpr-corner tl" />
+            <div className="anpr-corner tr" />
+            <div className="anpr-corner bl" />
+            <div className="anpr-corner br" />
+            <div className="anpr-scanline" />
+            <div className="anpr-laser" />
+
+            <div className="absolute left-3 top-3 z-10 flex items-center gap-1.5 rounded bg-red-600/90 px-2 py-0.5 font-mono text-[10px] font-semibold text-white">
+              <span className={`h-2 w-2 rounded-full bg-white ${recording ? "animate-ping" : "opacity-70"}`} />
+              REC{recording ? "" : " · IDLE"}
+            </div>
+            <div className="absolute right-3 top-3 z-10 font-mono text-[10px] text-emerald-200/90">
+              {now.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }).toUpperCase()}{" "}
+              {now.toLocaleTimeString("en-GB")}
+            </div>
+            <div className="absolute bottom-3 right-3 z-10 font-mono text-[9px] text-white/40">
+              CAM-01 · SBX-2200 · 4K OCR
+            </div>
+
+            <PlateReadout
+              text={decodeTarget}
+              locked={lockedChars}
+              status={readInfo ? (readInfo.ok ? "ok" : "no") : "reading"}
+              conf={readInfo?.conf}
+            />
+          </div>
+
+          <div>
+            <label className="text-xs uppercase tracking-wider text-slate-400">Vehicle Reg No.</label>
+            <div className="mt-1 flex gap-2">
+              <input
+                value={regNo}
+                onChange={(e) => setRegNo(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && capture()}
+                placeholder="e.g. KKH 135E"
+                className="input font-mono"
+              />
+              <button onClick={capture} disabled={busy} className="btn-primary shrink-0">
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanLine className="h-4 w-4" />}
+              </button>
+            </div>
+            {filtered.length > 0 && regNo && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {filtered.map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => setRegNo(p)}
+                    className="chip border border-white/15 bg-white/5 text-slate-300 hover:bg-white/10"
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Token & journey status */}
+        <div className="card space-y-4">
+          <div className="flex items-center gap-2 text-sm font-semibold text-slate-300">
+            <QrCode className="h-4 w-4" /> Digital Token / Journey
+          </div>
+
+          {!entry ? (
+            <p className="py-8 text-center text-sm text-slate-500">
+              Capture a vehicle to issue its KPC digital token.
+            </p>
+          ) : (
+            <>
+              <div className="rounded-lg border border-kpc-green/40 bg-kpc-green/10 p-4 text-center">
+                <p className="text-xs uppercase tracking-widest text-emerald-300">Issued Token</p>
+                <p className="mt-1 font-mono text-lg font-bold text-white">{entry.token}</p>
+                <div className="mt-2 flex justify-center gap-2">
+                  <StatusBadge pulse status={entry.truck.status} />
+                  {entry.manifestVerified ? (
+                    <span className="chip bg-emerald-500/20 text-emerald-300">Manifest ✓</span>
+                  ) : (
+                    <span className="chip bg-amber-500/20 text-amber-300">Verification Hold</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-2 text-sm">
+                <p className="flex justify-between"><span className="text-slate-400">Product</span><b>{entry.truck.product ?? "—"}</b></p>
+                <p className="flex justify-between"><span className="text-slate-400">Capacity</span><b>{entry.truck.capacityLiters?.toLocaleString()} L</b></p>
+                <p className="flex justify-between"><span className="text-slate-400">Driver</span><b>{entry.truck.driverName}</b></p>
+                <p className="flex justify-between"><span className="text-slate-400">Assigned Bay</span><b className="text-emerald-300">{entry.truck.bayId ?? "auto (at weighbridge)"}</b></p>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => runCheckpoint("GATE")}
+                  disabled={busy}
+                  className="btn-ghost text-xs"
+                >
+                  RFID Gate
+                </button>
+                <button
+                  onClick={() => runCheckpoint("WEIGHBRIDGE")}
+                  disabled={busy}
+                  className="btn-primary text-xs"
+                >
+                  Weighbridge → AI Bay Match
+                </button>
+              </div>
+
+              {scanResult?.allocation && (
+                <div className="mt-3 rounded-lg border border-amber-400/40 bg-amber-500/10 p-3 text-xs text-amber-200">
+                  <p className="font-semibold">AI Bay Matching Engine</p>
+                  <p className="mt-1">
+                    Assigned <b>{scanResult.allocation.assignment.bayId}</b> — wait ~
+                    {scanResult.allocation.assignment.etaMinutes} min, load ~
+                    {scanResult.allocation.assignment.forecastLoadMinutes} min
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {scanResult.allocation.assignment.auditLog.map((a) => (
+                      <span key={a.bayId} className="chip border border-white/10 bg-black/20 text-slate-300">
+                        {a.bayId} · score {a.score}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Journey pipeline */}
+      <div className="card">
+        <p className="mb-3 text-sm font-semibold text-slate-300">Closed-loop journey</p>
+        <div className="grid gap-2 md:grid-cols-4">
+          {[
+            { label: "Gate Entry", done: Boolean(entry?.token) },
+            { label: "Weighbridge RFID", done: Boolean(scanResult?.checkpoint?.checkpoint === "WEIGHBRIDGE") },
+            { label: "AI Bay Assigned", done: Boolean(scanResult?.allocation) },
+            { label: "Loading Gantry", done: false },
+          ].map((s, i) => (
+            <div
+              key={s.label}
+              className={`flex items-center gap-2 rounded-lg border p-3 text-sm ${
+                s.done ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-200" : "border-white/10 bg-black/20 text-slate-500"
+              }`}
+            >
+              {s.done ? <CheckCircle2 className="h-4 w-4" /> : <ArrowRight className="h-4 w-4" />}
+              <span>{s.label}</span>
+              <span className="ml-auto font-mono text-[10px]">0{i + 1}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
