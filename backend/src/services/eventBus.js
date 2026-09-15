@@ -24,6 +24,7 @@ export const STREAM_EVENTS = new Set([
   "sla:breach",
   "preMovement:alert",
   "compliance:violation",
+  "truck:exited",
 ]);
 
 export function notifyEvent(event, payload) {

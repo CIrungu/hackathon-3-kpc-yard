@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Smartphone, RefreshCw, MapPin, BellRing, Clock, Volume2, VolumeX } from "lucide-react";
+import { Smartphone, RefreshCw, MapPin, BellRing, Clock, Volume2, VolumeX, ScanLine } from "lucide-react";
 import { useDemoAuth } from "../hooks/useDemoAuth.js";
 import { useYardStream } from "../hooks/useYardStream.js";
 import { yardApi } from "../services/api.js";
@@ -36,6 +36,11 @@ export default function DriverMobile() {
       pushSms("Pre-movement", `Gantry ${m.payload.bayId} nearly clear — prepare to move forward`);
       speak(`Gantry ${m.payload.bayId} is nearly clear. Get ready to move forward to the gantry.`);
     },
+    "truck:exited": (m) => {
+      pushSms("Journey complete", `Vehicle ${m.payload.regNo} cleared the exit gate — token redeemed.`);
+      speak(`Vehicle ${m.payload.regNo} has exited the yard. Journey complete.`);
+      refresh();
+    },
     "compliance:violation": (m) => pushSms("Compliance notice", m.payload.message),
   });
 
@@ -71,6 +76,23 @@ export default function DriverMobile() {
     if (!token.trim()) return;
     localStorage.setItem("kpc_latest_token", token.trim().toUpperCase());
     refresh();
+  }
+
+  const [scanning, setScanning] = useState(false);
+
+  async function scanExit() {
+    if (!token) return;
+    setScanning(true);
+    try {
+      await yardApi.scanCheckpoint({ token, checkpoint: "EXIT" });
+      pushSms("Exit gate scanned", "Barrier raised — token redeemed. Safe journey.");
+      speak("Exit barrier cleared. Your journey is complete. Safe travels.");
+      await refresh();
+    } catch (err) {
+      pushSms("Exit scan failed", err.message);
+    } finally {
+      setScanning(false);
+    }
   }
 
   const eta = status?.etaMinutes;
@@ -163,6 +185,12 @@ export default function DriverMobile() {
           <button onClick={refresh} className="btn-ghost w-full text-xs">
             <RefreshCw className="mr-1 h-3 w-3" /> Refresh status
           </button>
+
+          {status.status === "LOADED" && (
+            <button onClick={scanExit} disabled={scanning} className="btn-primary w-full text-xs">
+              <ScanLine className="mr-1 h-3 w-3" /> {scanning ? "Scanning exit gate…" : "Scan exit gate — complete journey"}
+            </button>
+          )}
         </>
       )}
 

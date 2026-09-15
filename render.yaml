@@ -47,12 +47,16 @@ services:
       - key: SLACK_WEBHOOK_URL
         sync: false
       # TALK-SASA bulk SMS
+      - key: TALKSASA_API_KEY
+        sync: false
       - key: TALKSASA_API_TOKEN
         sync: false
       - key: TALKSASA_SENDER_ID
         value: TALK-SASA
       - key: TALKSASA_BASE_URL
         value: https://bulksms.talksasa.com/api/v3/
+      - key: TALKSASA_ENDPOINT
+        value: https://bulksms.talksasa.com/api/v3/sms/send
 
   - type: web
     name: kpc-yard-frontend

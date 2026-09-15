@@ -14,16 +14,16 @@ export const SEED_BAYS = [
 ];
 
 export const SEED_MANIFEST = [
-  { regNo: "KCA 123X", driver: "James Otieno", driverPhone: "+254711000001", product: PRODUCTS.DIESEL, capacityLiters: 45_000 },
-  { regNo: "KDB 456Y", driver: "Mary Wambui", driverPhone: "+254711000002", product: PRODUCTS.DIESEL, capacityLiters: 38_000 },
-  { regNo: "KEC 789Z", driver: "Peter Mwangi", driverPhone: "+254711000003", product: PRODUCTS.PETROL, capacityLiters: 33_000 },
-  { regNo: "KFD 321A", driver: "Grace Njeri", driverPhone: "+254711000004", product: PRODUCTS.PETROL, capacityLiters: 42_000 },
-  { regNo: "KGE 654B", driver: "Charles Kiptoo", driverPhone: "+254711000005", product: PRODUCTS.KEROSENE, capacityLiters: 30_000 },
-  { regNo: "KHF 987C", driver: "Alice Chebet", driverPhone: "+254711000006", product: PRODUCTS.JET_A1, capacityLiters: 50_000 },
-  { regNo: "KJG 246D", driver: "Samuel Karanja", driverPhone: "+254711000007", product: PRODUCTS.ADBLUE, capacityLiters: 20_000 },
-  { regNo: "KKH 135E", driver: "David Omondi", driverPhone: "+254711000008", product: PRODUCTS.DIESEL, capacityLiters: 45_000 },
-  { regNo: "KMJ 864F", driver: "Faith Akinyi", driverPhone: "+254711000009", product: PRODUCTS.PETROL, capacityLiters: 34_500 },
-  { regNo: "KNK 753G", driver: "George Barasa", driverPhone: "+254711000010", product: PRODUCTS.DIESEL, capacityLiters: 41_000 },
+  { regNo: "KCA 123X", driver: "James Otieno", driverPhone: "+254711000001", product: PRODUCTS.DIESEL, capacityLiters: 45_000, tareKg: 20_500 },
+  { regNo: "KDB 456Y", driver: "Mary Wambui", driverPhone: "+254711000002", product: PRODUCTS.DIESEL, capacityLiters: 38_000, tareKg: 18_000 },
+  { regNo: "KEC 789Z", driver: "Peter Mwangi", driverPhone: "+254711000003", product: PRODUCTS.PETROL, capacityLiters: 33_000, tareKg: 16_500 },
+  { regNo: "KFD 321A", driver: "Grace Njeri", driverPhone: "+254711000004", product: PRODUCTS.PETROL, capacityLiters: 42_000, tareKg: 19_500 },
+  { regNo: "KGE 654B", driver: "Charles Kiptoo", driverPhone: "+254711000005", product: PRODUCTS.KEROSENE, capacityLiters: 30_000, tareKg: 15_500 },
+  { regNo: "KHF 987C", driver: "Alice Chebet", driverPhone: "+254711000006", product: PRODUCTS.JET_A1, capacityLiters: 50_000, tareKg: 22_000 },
+  { regNo: "KJG 246D", driver: "Samuel Karanja", driverPhone: "+254711000007", product: PRODUCTS.ADBLUE, capacityLiters: 20_000, tareKg: 12_500 },
+  { regNo: "KKH 135E", driver: "David Omondi", driverPhone: "+254711000008", product: PRODUCTS.DIESEL, capacityLiters: 45_000, tareKg: 20_500 },
+  { regNo: "KMJ 864F", driver: "Faith Akinyi", driverPhone: "+254711000009", product: PRODUCTS.PETROL, capacityLiters: 34_500, tareKg: 17_000 },
+  { regNo: "KNK 753G", driver: "George Barasa", driverPhone: "+254711000010", product: PRODUCTS.DIESEL, capacityLiters: 41_000, tareKg: 19_000 },
 ];
 
 /**

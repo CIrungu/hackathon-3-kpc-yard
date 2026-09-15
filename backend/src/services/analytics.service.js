@@ -69,7 +69,7 @@ export async function computeMetrics({ nowTs = now() } = {}) {
   const active = Object.values(trucks).filter((t) => t.id && t.status !== "COMPLETED");
   const loading = active.filter((t) => t.status === "LOADING");
   const queued = active.filter((t) => t.status === "QUEUED");
-  const waiting = active.filter((t) => t.status === "WAITING" || t.status === "AT_WEIGHBRIDGE");
+  const waiting = active.filter((t) => t.status === "WAITING" || t.status === "AT_WEIGHBRIDGE" || t.status === "WEIGHBRIDGE_PASSED");
 
   const processedCount = completed.length;
   const hoursSinceMidnight = hourOfDay(nowTs);

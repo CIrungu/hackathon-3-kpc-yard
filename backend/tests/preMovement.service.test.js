@@ -1,5 +1,6 @@
 import { processGateEntry, allocateBayForTruck, startLoading } from "../src/services/yard.service.js";
 import { simulatePumpFlow, dispatchPreMovementAlerts } from "../src/services/autoReroute.service.js";
+import { verifyCheckpoint } from "../src/services/checkpoint.service.js";
 import { ref } from "../src/config/firebase.js";
 
 async function makeBay(id, pumpRateLpm = 1000) {
@@ -81,7 +82,25 @@ describe("Autonomous Flow Simulation & Pre-Movement Alerts", () => {
     const bay = (await ref(`yard/bays/${loading.bayId}`).once("value")).val();
     expect(bay.currentVehicleId).toBeFalsy();
     const truck = (await ref(`yard/trucks/${loading.id}`).once("value")).val();
-    expect(truck.status).toBe("COMPLETED");
+    expect(truck.status).toBe("LOADED");
+  });
+
+  test("EXIT scan completes the journey and frees the plate", async () => {
+    const trucks = (await ref("yard/trucks").once("value")).val();
+    const loaded = Object.values(trucks).find((t) => t.status === "LOADED");
+    expect(loaded).toBeDefined();
+
+    const { checkpoint } = await verifyCheckpoint({ token: loaded.token, checkpoint: "EXIT" });
+    expect(checkpoint.status).toBe("COMPLETED");
+    expect(checkpoint.sequence).toBe(3);
+
+    const after = (await ref(`yard/trucks/${loaded.id}`).once("value")).val();
+    expect(after.status).toBe("COMPLETED");
+    expect(after.checkpoint).toBe("EXIT");
+    expect(after.lastEvent).toBe("EXITED");
+
+    const stats = (await ref("yard/stats/totals").once("value")).val();
+    expect(Number(stats.completedCount)).toBeGreaterThan(0);
   });
 
   test("dispatches a pre-movement SMS to the next queued driver inside the window", async () => {

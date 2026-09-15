@@ -44,14 +44,22 @@ describe("REST API Surface", () => {
     const scan = await request(app)
       .post("/api/checkpoints/scan")
       .set("Authorization", `Bearer ${gateToken}`)
-      .send({ token: truckToken, checkpoint: "WEIGHBRIDGE" });
+      .send({ token: truckToken, checkpoint: "WEIGHBRIDGE", payload: { grossWeightKg: 58750 } });
     expect(scan.status).toBe(200);
     expect(scan.body.data.allocation.assignment.bayId).toBe("G1");
   });
 
-  test("control-plane metrics are manager-only", async () => {
-    const denied = await request(app).get("/api/control-plane/metrics");
-    expect(denied.status).toBe(401);
+  test("control-plane telemetry is public but commands stay gated", async () => {
+    for (const ep of ["metrics", "esg", "compliance", "integrations", "snapshot"]) {
+      const res = await request(app).get(`/api/control-plane/${ep}`);
+      expect(res.status).toBe(200);
+    }
+
+    const publicSnap = await request(app).get("/api/control-plane/snapshot");
+    const snapTrucks = Object.values(publicSnap.body.data.trucks ?? {});
+    for (const t of snapTrucks) {
+      if (t && typeof t === "object") expect(t.token).toBeUndefined();
+    }
 
     const ok = await request(app)
       .get("/api/control-plane/metrics")
@@ -59,6 +67,11 @@ describe("REST API Surface", () => {
     expect(ok.status).toBe(200);
     expect(ok.body.data.kpis).toBeDefined();
     expect(ok.body.data.kpis.demurrageRatePerHourKes).toBeGreaterThan(0);
+
+    for (const path of ["/api/control-plane/throughput", "/api/control-plane/anomalies"]) {
+      const denied = await request(app).get(path);
+      expect(denied.status).toBe(401);
+    }
   });
 
   test("driver can look up their own token", async () => {
@@ -67,5 +80,15 @@ describe("REST API Surface", () => {
       .set("Authorization", `Bearer ${managerToken}`);
     expect(res.status).toBe(200);
     expect(res.body.data.token).toBe(truckToken);
+  });
+
+  test("gate officer can dispatch the SMS queue pass", async () => {
+    const res = await request(app)
+      .post("/api/gate/dispatch-sms")
+      .set("Authorization", `Bearer ${gateToken}`)
+      .send({ token: truckToken });
+    expect(res.status).toBe(200);
+    expect(res.body.data.to).toMatch(/^\+\d{12}$/);
+    expect(res.body.data.ok).toBe(true);
   });
 });

@@ -55,9 +55,10 @@ describe("ANPR & Digital Token Issuance", () => {
     await expect(processGateEntry({ regNo: "KCA 123X", depot: "MBA" })).rejects.toThrow(/already has an active token/);
   });
 
-  test("unknown plate still gets a token but unverified", async () => {
-    const entry = await processGateEntry({ regNo: "ZZZ 000Z", depot: "MBA" });
-    expect(entry.manifestVerified).toBe(false);
+  test("unknown plate is declined at the gate (manifest-only)", async () => {
+    await expect(processGateEntry({ regNo: "ZZZ 000Z", depot: "MBA" })).rejects.toThrow(
+      /not on scheduled batch manifest/,
+    );
   });
 });
 
@@ -103,7 +104,7 @@ describe("Loading lifecycle (start → complete)", () => {
     expect(baySnap.val().currentVehicleId).toBe(id);
 
     const { completed, efficiencyPct } = await completeLoading(id, bayId, { pumpRateLpm: 1100 });
-    expect(completed.status).toBe(TRUCK_STATUS.COMPLETED);
+    expect(completed.status).toBe(TRUCK_STATUS.LOADED);
     expect(completed.loadCompletedAt).toBeTruthy();
     expect(efficiencyPct).toBeGreaterThan(0);
 

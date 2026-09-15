@@ -21,14 +21,17 @@ const schema = Joi.object({
   SLACK_WEBHOOK_URL: Joi.string().allow("").optional(),
 
   TALKSASA_API_TOKEN: Joi.string().allow("").optional(),
+  TALKSASA_API_KEY: Joi.string().allow("").optional(),
   TALKSASA_SENDER_ID: Joi.string().allow("").optional(),
   TALKSASA_BASE_URL: Joi.string().allow("").optional(),
+  TALKSASA_ENDPOINT: Joi.string().allow("").optional(),
 
   EMULATOR_MODE: Joi.boolean().truthy("true").falsy("false").default(true),
 
   DEMURRAGE_RATE_PER_HOUR_KES: Joi.number().min(0).default(12000),
   YARD_OPERATING_HOURS_PER_DAY: Joi.number().min(1).max(24).default(24),
   OPTIMAL_TURNAROUND_HOURS: Joi.number().min(0.1).default(4.5),
+  WEIGHBRIDGE_TOLERANCE_PCT: Joi.number().min(0).default(5),
 
   SIM_MINUTES_PER_LOOP: Joi.number().min(0).default(180),
   SIMULATE_PUMP_FLOW: Joi.boolean().truthy("true").falsy("false").default(true),
@@ -67,12 +70,15 @@ export default {
   },
   sms: {
     token: env.TALKSASA_API_TOKEN,
-    senderId: env.TALKSASA_SENDER_ID,
+    apiKey: env.TALKSASA_API_KEY,
+    senderId: env.TALKSASA_SENDER_ID || "TALK-SASA",
     baseUrl: env.TALKSASA_BASE_URL,
+    endpoint: env.TALKSASA_ENDPOINT,
   },
   demurrageRatePerHourKes: env.DEMURRAGE_RATE_PER_HOUR_KES,
   yardOperatingHoursPerDay: env.YARD_OPERATING_HOURS_PER_DAY,
   optimalTurnaroundHours: env.OPTIMAL_TURNAROUND_HOURS,
+  weighbridgeTolerancePct: env.WEIGHBRIDGE_TOLERANCE_PCT,
   simMinutesPerLoop: env.SIM_MINUTES_PER_LOOP,
   simulatePumpFlow: env.SIMULATE_PUMP_FLOW,
   preMovementAlertMinutes: env.PRE_MOVEMENT_ALERT_MINUTES,

@@ -2,6 +2,7 @@ import { ref } from "../config/firebase.js";
 import { generateKey } from "./memoryStore.js";
 import { ApiError } from "../middleware/errorHandler.js";
 import { notifyEvent } from "./eventBus.js";
+import env from "../config/env.js";
 
 export const PRODUCTS = {
   DIESEL: "DIESEL",
@@ -15,12 +16,56 @@ export const TRUCK_STATUS = {
   WAITING: "WAITING",
   APPROACHING: "APPROACHING",
   AT_WEIGHBRIDGE: "AT_WEIGHBRIDGE",
+  WEIGHBRIDGE_PASSED: "WEIGHBRIDGE_PASSED",
   QUEUED: "QUEUED",
   LOADING: "LOADING",
+  LOADED: "LOADED",
   COMPLETED: "COMPLETED",
   REROUTED: "REROUTED",
   HELD: "HELD",
 };
+
+/** Product density used to derive expected cargo mass from manifest volume. */
+export const PRODUCT_DENSITY_KG_PER_LITER = {
+  [PRODUCTS.DIESEL]: 0.85,
+  [PRODUCTS.PETROL]: 0.75,
+  [PRODUCTS.KEROSENE]: 0.817,
+  [PRODUCTS.JET_A1]: 0.8,
+  [PRODUCTS.ADBLUE]: 1.09,
+};
+
+/** Heuristic chassis+tank tare when a manifest entry omits tareKg. */
+export function defaultTareKg(capacityLiters = 0) {
+  return Math.round(Number(capacityLiters ?? 0) * 0.45);
+}
+
+/**
+ * Weighbridge gross-weight verification.
+ * Expected gross = tare weight + (capacityLiters × product density).
+ * Passes when the scale reading is within WEIGHBRIDGE_TOLERANCE_PCT of it.
+ */
+export function verifyGrossWeight({ grossWeightKg, tareKg, capacityLiters, product, tolerancePct = null }) {
+  const pct = Number(tolerancePct ?? env.weighbridgeTolerancePct ?? 5);
+  const density = PRODUCT_DENSITY_KG_PER_LITER[product] ?? null;
+  const t = Number(tareKg) > 0 ? Number(tareKg) : defaultTareKg(capacityLiters);
+  const cargoKg = Number(capacityLiters ?? 0) * (density ?? 1);
+  const expectedGrossKg = t + cargoKg;
+  const toleranceKg = (expectedGrossKg * pct) / 100;
+  const gross = Number(grossWeightKg);
+  const diffKg = gross - expectedGrossKg;
+  const pass = Number.isFinite(gross) && Math.abs(diffKg) <= toleranceKg;
+  return {
+    density,
+    tareKg: t,
+    cargoKg: Math.round(cargoKg),
+    expectedGrossKg: Math.round(expectedGrossKg),
+    grossWeightKg: gross,
+    tolerancePct: pct,
+    toleranceKg: Math.round(toleranceKg),
+    diffKg: Math.round(diffKg),
+    pass,
+  };
+}
 
 const PATH_TRUCKS = "yard/trucks";
 const PATH_BAYS = "yard/bays";
@@ -92,6 +137,10 @@ export async function processGateEntry({ regNo, depot = "MBA", driverName = null
   }
 
   const manifestEntry = await lookupManifest(reg);
+  if (!manifestEntry) {
+    throw ApiError.forbidden(`Plate ${reg} not on scheduled batch manifest — entry declined`);
+  }
+
   const token = generateToken(depot);
   const truckId = generateKey("truck_");
 
@@ -99,13 +148,21 @@ export async function processGateEntry({ regNo, depot = "MBA", driverName = null
     id: truckId,
     token,
     regNo: reg,
-    driverName: driverName ?? manifestEntry?.driver ?? "Unknown",
-    driverPhone: driverPhone ?? manifestEntry?.driverPhone ?? "",
-    product: manifestEntry?.product ?? null,
-    capacityLiters: Number(manifestEntry?.capacityLiters ?? 0),
+    driverName: driverName ?? manifestEntry.driver ?? "Unknown",
+    driverPhone: driverPhone ?? manifestEntry.driverPhone ?? "",
+    product: manifestEntry.product ?? null,
+    capacityLiters: Number(manifestEntry.capacityLiters ?? 0),
+    tareKg: Number(manifestEntry.tareKg ?? defaultTareKg(manifestEntry.capacityLiters)),
+    expectedGrossWeightKg: (() => {
+      const density = PRODUCT_DENSITY_KG_PER_LITER[manifestEntry.product] ?? 1;
+      const t = Number(manifestEntry.tareKg) > 0 ? Number(manifestEntry.tareKg) : defaultTareKg(manifestEntry.capacityLiters);
+      return Math.round(Number(manifestEntry.capacityLiters ?? 0) * density + t);
+    })(),
+    grossWeightKg: null,
+    weightPassed: null,
     status: TRUCK_STATUS.WAITING,
     checkpoint: "GATE",
-    manifestVerified: Boolean(manifestEntry),
+    manifestVerified: true,
     enteredAt: now(),
     weighedAt: null,
     bayId: null,
@@ -126,17 +183,15 @@ export async function processGateEntry({ regNo, depot = "MBA", driverName = null
     token: truck.token,
     regNo: truck.regNo,
     product: truck.product,
-    manifestVerified: truck.manifestVerified,
+    manifestVerified: true,
     timestamp: now(),
   });
 
   return {
     truck,
     token: truck.token,
-    manifestVerified: truck.manifestVerified,
-    message: manifestEntry
-      ? "Vehicle verified against scheduled batch manifest"
-      : "Vehicle not on manifest — holding for dispatch office verification",
+    manifestVerified: true,
+    message: "Vehicle verified against scheduled batch manifest",
     id: truckId,
   };
 }
@@ -353,7 +408,7 @@ export async function completeLoading(truckId, bayId, gantry) {
 
   const completed = {
     ...truck,
-    status: TRUCK_STATUS.COMPLETED,
+    status: TRUCK_STATUS.LOADED,
     loadCompletedAt: loadEnd,
     actualLoadingMinutes: Math.round(actualLoadingMinutes * 100) / 100,
     theoreticalLoadingMinutes: Number(theoreticalMinutes.toFixed(2)),

@@ -200,10 +200,10 @@ export default function ExecutiveDashboard() {
           {/* Live fleet strip */}
           <div className="grid gap-3 md:grid-cols-5">
             {[
-              { label: "Processed (today)", value: live?.processedCount ?? 0, tone: "text-emerald-300" },
-              { label: "In yard", value: live?.activeInYard ?? 0, tone: "text-slate-200" },
-              { label: "Queued", value: live?.queuedCount ?? 0, tone: "text-amber-300" },
-              { label: "Loading now", value: live?.loadingCount ?? 0, tone: "text-sky-300" },
+              { label: "Processed (today)", value: String(live?.processedCount ?? 0), tone: "text-emerald-300" },
+              { label: "In yard", value: String(live?.activeInYard ?? 0), tone: "text-slate-200" },
+              { label: "Queued", value: String(live?.queuedCount ?? 0), tone: "text-amber-300" },
+              { label: "Loading now", value: String(live?.loadingCount ?? 0), tone: "text-sky-300" },
               { label: "Liters in queue", value: `${((live?.totalLitersInQueue ?? 0) / 1000).toFixed(0)} kL`, tone: "text-violet-300" },
             ].map((s) => (
               <div key={s.label} className="glass glass-outline p-3 text-center">

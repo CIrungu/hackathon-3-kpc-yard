@@ -25,7 +25,7 @@ export function useYardStream(handlers = {}) {
       }
     };
 
-    for (const evt of ["gate:entry", "bay:assigned", "loading:started", "loading:progress", "loading:completed", "checkpoint:crossed", "anomaly:detected", "reroute:applied", "queue:sequenced", "control:override", "sla:breach", "preMovement:alert", "compliance:violation"]) {
+    for (const evt of ["gate:entry", "bay:assigned", "loading:started", "loading:progress", "loading:completed", "checkpoint:crossed", "anomaly:detected", "reroute:applied", "queue:sequenced", "control:override", "sla:breach", "preMovement:alert", "compliance:violation", "truck:exited"]) {
       source.addEventListener(evt, generic);
     }
     source.addEventListener("message", generic);

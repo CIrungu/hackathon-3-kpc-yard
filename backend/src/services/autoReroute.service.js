@@ -313,12 +313,7 @@ export async function simulatePumpFlow(bays, trucks) {
         const { completeLoading } = await import("./yard.service.js");
         const latestBay = (await getLiveBays())[bayId] ?? bay;
         try {
-          const result = await completeLoading(truck.id, bayId, latestBay);
-          const { recordCompletion } = await import("./analytics.service.js");
-          await recordCompletion({
-            truck: result.completed,
-            completion: { actualLoadingMinutes: result.completed.actualLoadingMinutes },
-          });
+          await completeLoading(truck.id, bayId, latestBay);
           completed.push({ truckId: truck.id, bayId, regNo: truck.regNo });
           justFreed = true;
         } catch (err) {

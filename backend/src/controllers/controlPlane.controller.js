@@ -112,6 +112,14 @@ export async function throughput(req, res, next) {
 export async function yardSnapshot(req, res, next) {
   try {
     const [bays, trucks] = await Promise.all([getLiveBays(), getLiveTrucks()]);
+    /* Snapshot is served unauthenticated (read-only telemetry): never leak
+       driver access tokens to anonymous callers. */
+    for (const key of Object.keys(trucks ?? {})) {
+      const t = trucks[key];
+      if (t && typeof t === "object" && !Array.isArray(t) && "token" in t) {
+        delete t.token;
+      }
+    }
     return res.json({ success: true, data: { bays, trucks } });
   } catch (err) {
     return next(err);
@@ -182,7 +190,7 @@ export async function integrations(req, res, next) {
       data: {
         pagerDuty: Boolean(env.alerts.pagerDutyUrl),
         slack: Boolean(env.alerts.slackUrl),
-        sms: Boolean(env.sms.token && env.sms.baseUrl),
+        sms: Boolean((env.sms.apiKey || env.sms.token) && (env.sms.endpoint || env.sms.baseUrl)),
         emulatorMode: env.firebase.emulatorMode,
         nodeEnv: env.nodeEnv,
       },

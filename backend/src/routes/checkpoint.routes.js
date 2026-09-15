@@ -15,7 +15,7 @@ router.use(authenticate);
 /**
  * POST /checkpoints/scan — RFID reader event (Gate → Weighbridge → Gantry)
  */
-router.post("/scan", authorize(ROLES.GATE_OFFICER, ROLES.SYSTEM, ROLES.DEPOT_MANAGER), scanCheckpoint);
+router.post("/scan", authorize(ROLES.GATE_OFFICER, ROLES.SYSTEM, ROLES.DEPOT_MANAGER, ROLES.DRIVER), scanCheckpoint);
 
 /**
  * GET /checkpoints/:token — full checkpoint trail for a token

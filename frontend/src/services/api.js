@@ -97,8 +97,9 @@ export async function authenticateDemo(role, name) {
 
 export const yardApi = {
   gateEntry: (payload) => api.post("/gate/entry", payload).then((r) => r.data.data),
+  dispatchSms: (payload) => api.post("/gate/dispatch-sms", payload).then((r) => r.data.data),
   scanCheckpoint: (payload) => api.post("/checkpoints/scan", payload).then((r) => r.data.data),
-  driverStatus: (token) => api.get(`/driver/${token}`).then((r) => r.data.data),
+  driverStatus: (token) => api.get(`/driver/${token}?includeBay=true`).then((r) => r.data.data),
   metrics: () => api.get("/control-plane/metrics").then((r) => r.data.data),
   throughput: (days = 7) => api.get(`/control-plane/throughput?days=${days}`).then((r) => r.data.data),
   anomalies: () => api.get("/control-plane/anomalies").then((r) => r.data.data),

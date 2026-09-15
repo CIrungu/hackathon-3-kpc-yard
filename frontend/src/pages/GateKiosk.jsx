@@ -98,6 +98,9 @@ export default function GateKiosk() {
   const [busy, setBusy] = useState(false);
   const [scanResult, setScanResult] = useState(null);
   const [voiceOn, setVoiceOn] = useState(() => localStorage.getItem("kpc_voice_enabled") !== "off");
+  const [smsPhone, setSmsPhone] = useState("");
+  const [smsResult, setSmsResult] = useState(null);
+  const [weightResult, setWeightResult] = useState(null);
 
   const [driveTick, setDriveTick] = useState(0);
   const [recording, setRecording] = useState(false);
@@ -125,11 +128,14 @@ export default function GateKiosk() {
     setPlate(null);
     setPhase("scanning");
     setDriveTick((t) => t + 1);
+    setSmsResult(null);
+    setWeightResult(null);
 
     const iv = setInterval(() => setLockedChars((n) => Math.min(n + 1, target.length)), 220);
     try {
       const result = await yardApi.gateEntry({ regNo: target, depot: "MBA" });
       setEntry(result);
+      setSmsPhone(result.truck.driverPhone ?? "");
       setPlate(result.truck.regNo);
       localStorage.setItem("kpc_latest_token", result.token);
       setReadInfo({ ok: true, conf: 94 + Math.floor(Math.random() * 5) });
@@ -157,11 +163,15 @@ export default function GateKiosk() {
     if (!entry) return;
     setBusy(true);
     try {
-      const result = await yardApi.scanCheckpoint({
-        token: entry.truck.token,
-        checkpoint,
-      });
+      const checkpointPayload = { token: entry.truck.token, checkpoint };
+      if (checkpoint === "WEIGHBRIDGE" && entry.truck.expectedGrossWeightKg) {
+        // Simulated scale reading: nominal expected gross with a tiny jitter
+        const jitter = 1 + (Math.random() - 0.5) * 0.008;
+        checkpointPayload.payload = { grossWeightKg: Math.round(entry.truck.expectedGrossWeightKg * jitter) };
+      }
+      const result = await yardApi.scanCheckpoint(checkpointPayload);
       setScanResult(result);
+      if (result.weight) setWeightResult(result.weight);
       if (result.allocation) {
         const { assignment } = result.allocation;
         speak(`Bay ${assignment.bayId} assigned. Estimated wait ${assignment.etaMinutes} minutes. Please proceed to gantry ${assignment.bayId.replace(/^G/i, "")}.`);
@@ -181,6 +191,33 @@ export default function GateKiosk() {
     } catch (err) {
       speak(`Scanner error at ${checkpoint}. ${err.message}`);
       pushAlert({ tone: "error", title: "Scanner Error", message: err.message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function dispatchSmsPass() {
+    if (!entry) return;
+    setBusy(true);
+    setSmsResult(null);
+    try {
+      const phone = smsPhone.trim() || entry.truck.driverPhone || "";
+      const res = await yardApi.dispatchSms({ token: entry.token, phone: phone || undefined });
+      setSmsResult(res);
+      if (res.ok) {
+        speak(`SMS queue pass dispatched to ${res.to}.`);
+        pushAlert({
+          tone: res.emulated ? "info" : "success",
+          title: res.emulated ? "SMS emulated (demo)" : "SMS dispatched — TALK-SASA",
+          message: `Token ${entry.token} → ${res.to}`,
+        });
+      } else {
+        speak(`SMS dispatch failed. ${res.reason}`);
+        pushAlert({ tone: "error", title: "SMS dispatch failed", message: res.reason });
+      }
+    } catch (err) {
+      speak(`SMS dispatch error. ${err.message}`);
+      pushAlert({ tone: "error", title: "SMS dispatch failed", message: err.message });
     } finally {
       setBusy(false);
     }
@@ -414,6 +451,45 @@ export default function GateKiosk() {
                 <button onClick={() => runCheckpoint("WEIGHBRIDGE")} disabled={busy} className="btn-primary text-xs">
                   Weighbridge → AI Bay Match
                 </button>
+              </div>
+
+              {weightResult && (
+                <div
+                  className={`mt-2 rounded-lg border p-3 text-xs ${
+                    weightResult.pass
+                      ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-200"
+                      : "border-red-400/40 bg-red-500/10 text-red-200"
+                  }`}
+                >
+                  <p className="font-semibold">Weighbridge Verification {weightResult.pass ? "✓ PASS" : "✗ HOLD"}</p>
+                  <p className="mt-1">
+                    Gross {weightResult.grossWeightKg?.toLocaleString()} kg — expected {weightResult.expectedGrossKg?.toLocaleString()} kg (Δ{" "}
+                    {weightResult.diffKg} kg / ±{weightResult.tolerancePct}%)
+                  </p>
+                </div>
+              )}
+
+              <div className="mt-3 rounded-lg border border-blue-500/30 bg-blue-500/10 p-3">
+                <p className="text-xs font-semibold text-blue-300">Dispatch & Send SMS Pass</p>
+                <label className="mt-2 block text-[10px] uppercase tracking-wider text-slate-400">Driver Phone</label>
+                <div className="mt-1 flex gap-2">
+                  <input
+                    value={smsPhone}
+                    onChange={(e) => setSmsPhone(e.target.value)}
+                    placeholder="+254711000001 or 0745074245"
+                    className="input font-mono text-xs"
+                  />
+                  <button onClick={dispatchSmsPass} disabled={busy || !entry?.token} className="btn-primary shrink-0 text-xs">
+                    Send SMS Pass
+                  </button>
+                </div>
+                {smsResult && (
+                  <p className={`mt-2 text-xs ${smsResult.ok ? "text-emerald-300" : "text-red-300"}`}>
+                    {smsResult.ok
+                      ? `✓ ${smsResult.emulated ? "Emulated (demo mode)" : "Sent via TALK-SASA"} → ${smsResult.to}`
+                      : `✗ ${smsResult.reason}`}
+                  </p>
+                )}
               </div>
 
               {scanResult?.allocation && (

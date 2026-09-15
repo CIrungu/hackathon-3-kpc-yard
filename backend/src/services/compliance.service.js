@@ -72,7 +72,7 @@ export async function scanCompliance(bays, trucks) {
       });
     }
 
-    if (["COMPLETED", "LOADING"].includes(truck.status)) continue;
+    if (["COMPLETED", "LOADING", "LOADED"].includes(truck.status)) continue;
 
     const stage = truck.checkpoint;
     const dwellLimit = DWELL_LIMITS_MIN[stage];

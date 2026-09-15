@@ -1,6 +1,5 @@
 import { verifyCheckpoint, checkpointTrail } from "../services/checkpoint.service.js";
 import { allocateBayForTruck, startLoading, completeLoading, getLiveBays } from "../services/yard.service.js";
-import { recordCompletion } from "../services/analytics.service.js";
 
 function rawBodyToCheckpoint(req) {
   return {
@@ -53,8 +52,6 @@ export async function finishLoading(req, res, next) {
     const bays = await getLiveBays();
     const gantry = bays[bayId] ?? {};
     const { completed, theoreticalMinutes, efficiencyPct } = await completeLoading(truckId, bayId, gantry);
-
-    await recordCompletion({ truck: completed, completion: { actualLoadingMinutes: completed.actualLoadingMinutes } });
 
     return res.json({
       success: true,
