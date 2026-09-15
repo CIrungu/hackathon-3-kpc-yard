@@ -9,7 +9,7 @@ import { pushAlert } from "../components/AlertCenter.jsx";
 
 export default function DepotMap() {
   const auth = useDemoAuth("executive", "Executive Viewer");
-  const { data, error, loading } = useYardSnapshot(5000);
+  const { data, error, loading } = useYardSnapshot(5000, auth.ready);
 
   useYardStream({
     "anomaly:detected": (m) =>

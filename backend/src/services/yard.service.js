@@ -313,6 +313,7 @@ export async function startLoading(truckId, bayId) {
       currentVehicleRegNo: truck.regNo,
       currentVehicleCapacityLiters: truck.capacityLiters,
       currentVehicleRemainingLiters: truck.capacityLiters,
+      loadProgressPct: 0,
       loadStartedAt: now(),
     }),
   ];

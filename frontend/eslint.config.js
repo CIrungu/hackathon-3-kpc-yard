@@ -13,6 +13,9 @@ const browserGlobals = {
   setInterval: "readonly",
   clearInterval: "readonly",
   atob: "readonly",
+  requestAnimationFrame: "readonly",
+  cancelAnimationFrame: "readonly",
+  performance: "readonly",
 };
 
 /** @type {import("eslint").Linter.Config[]} */

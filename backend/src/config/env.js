@@ -30,6 +30,12 @@ const schema = Joi.object({
   YARD_OPERATING_HOURS_PER_DAY: Joi.number().min(1).max(24).default(24),
   OPTIMAL_TURNAROUND_HOURS: Joi.number().min(0.1).default(4.5),
 
+  SIM_MINUTES_PER_LOOP: Joi.number().min(0).default(300),
+  SIMULATE_PUMP_FLOW: Joi.boolean().truthy("true").falsy("false").default(true),
+  PRE_MOVEMENT_ALERT_MINUTES: Joi.number().min(0).default(5),
+  CO2_IDLE_KG_PER_HOUR: Joi.number().min(0).default(2.68),
+  CO2_TREES_PER_KG: Joi.number().min(0).default(21.7),
+
   CORS_ORIGIN: Joi.string().default("*"),
   RATE_LIMIT_WINDOW_MS: Joi.number().default(60000),
   RATE_LIMIT_MAX: Joi.number().default(120),
@@ -67,6 +73,13 @@ export default {
   demurrageRatePerHourKes: env.DEMURRAGE_RATE_PER_HOUR_KES,
   yardOperatingHoursPerDay: env.YARD_OPERATING_HOURS_PER_DAY,
   optimalTurnaroundHours: env.OPTIMAL_TURNAROUND_HOURS,
+  simMinutesPerLoop: env.SIM_MINUTES_PER_LOOP,
+  simulatePumpFlow: env.SIMULATE_PUMP_FLOW,
+  preMovementAlertMinutes: env.PRE_MOVEMENT_ALERT_MINUTES,
+  co2: {
+    idleKgPerHour: env.CO2_IDLE_KG_PER_HOUR,
+    treesPerKg: env.CO2_TREES_PER_KG,
+  },
   corsOrigin: env.CORS_ORIGIN,
   rateLimit: {
     windowMs: env.RATE_LIMIT_WINDOW_MS,

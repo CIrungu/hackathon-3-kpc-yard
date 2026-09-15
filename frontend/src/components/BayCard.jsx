@@ -39,9 +39,22 @@ export default function BayCard({ bay, bayId, onOverride = null, active = false 
         </div>
         <div className="text-right">
           {currentLoading ? (
-            <p className="font-mono text-xs text-emerald-300">
-              Loading: <b>{currentLoading}</b>
-            </p>
+            <>
+              <p className="font-mono text-xs text-emerald-300">
+                Loading: <b>{currentLoading}</b>
+              </p>
+              {typeof bay.loadProgressPct === "number" && (
+                <div className="mt-1 flex items-center gap-1.5">
+                  <div className="h-1.5 w-16 overflow-hidden rounded-full bg-white/10">
+                    <div
+                      className="h-full rounded-full bg-emerald-400 transition-all duration-700"
+                      style={{ width: `${bay.loadProgressPct}%` }}
+                    />
+                  </div>
+                  <span className="font-mono text-[10px] text-emerald-300">{Math.round(bay.loadProgressPct)}%</span>
+                </div>
+              )}
+            </>
           ) : (
             <p className="text-xs text-slate-500">Standby</p>
           )}

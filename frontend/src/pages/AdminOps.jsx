@@ -11,9 +11,9 @@ import { yardApi } from "../services/api.js";
 const HEALTH_OPTIONS = ["ACTIVE", "DEGRADED", "MAINTENANCE", "DOWN"];
 
 export default function AdminOps() {
-  useDemoAuth("depot-manager", "Depot Manager");
-  const { data, refresh } = useYardSnapshot(6000);
-  const { data: anomalies, refresh: refreshAnomalies } = useAnomalies(12000);
+  const auth = useDemoAuth("depot-manager", "Depot Manager");
+  const { data, refresh } = useYardSnapshot(6000, auth.ready);
+  const { data: anomalies, refresh: refreshAnomalies } = useAnomalies(12000, auth.ready);
   const [busy, setBusy] = useState(null);
 
   useYardStream({

@@ -6,9 +6,13 @@ import {
   ArrowRight,
   Loader2,
   CheckCircle2,
+  XCircle,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import { useDemoAuth } from "../hooks/useDemoAuth.js";
 import { yardApi } from "../services/api.js";
+import { speak } from "../services/speech.js";
 import StatusBadge from "../components/StatusBadge.jsx";
 import { pushAlert } from "../components/AlertCenter.jsx";
 
@@ -30,7 +34,7 @@ const rnd = (chars) => chars[Math.floor(Math.random() * chars.length)];
 function PlateReadout({ text, locked, status, conf }) {
   const raw = (text || "").padEnd(8, "·").slice(0, 8).split("");
   return (
-    <div className="absolute bottom-[15%] left-1/2 z-10 -translate-x-1/2">
+    <div className="absolute bottom-[15%] left-1/2 z-10 -translate-x-1/2 w-fit">
       <div
         className={`rounded-md px-3 py-1.5 font-mono text-sm font-bold tracking-[0.4em] transition-all duration-300 ${
           status === "ok"
@@ -43,12 +47,16 @@ function PlateReadout({ text, locked, status, conf }) {
         {raw.map((c, i) => {
           if (c === "·")
             return (
-              <span key={i} className="opacity-30">·</span>
+              <span key={i} className="opacity-30">
+                ·
+              </span>
             );
           if (status === "ok" || status === "no") return <span key={i}>{c}</span>;
           if (i < locked)
             return (
-              <span key={i} className="text-kpc-green">{c}</span>
+              <span key={i} className="text-kpc-green">
+                {c}
+              </span>
             );
           return (
             <span key={i} className="opacity-60">
@@ -64,6 +72,24 @@ function PlateReadout({ text, locked, status, conf }) {
   );
 }
 
+function OcrReticle({ active, confirmed }) {
+  const tone = confirmed ? "border-emerald-400" : active ? "border-amber-300" : "border-white/20";
+  return (
+    <div
+      className={`pointer-events-none absolute inset-x-[18%] top-[30%] bottom-[12%] z-[6] rounded-lg border-2 ${tone} transition-colors duration-300 ${
+        active ? "animate-pulse" : "opacity-30"
+      }`}
+    >
+      <span className="absolute -top-2.5 left-2 rounded bg-black/70 px-1.5 font-mono text-[9px] tracking-widest text-white/80">
+        OCR-{confirmed ? "LOCKED" : "TRACKING"}
+      </span>
+      <span className="absolute -top-2.5 right-2 font-mono text-[9px] text-white/60">
+        {confirmed ? "✓ 100%" : "23.4 fps"}
+      </span>
+    </div>
+  );
+}
+
 export default function GateKiosk() {
   const auth = useDemoAuth("gate-officer", "Gate Operator");
   const [regNo, setRegNo] = useState("");
@@ -71,11 +97,13 @@ export default function GateKiosk() {
   const [entry, setEntry] = useState(null);
   const [busy, setBusy] = useState(false);
   const [scanResult, setScanResult] = useState(null);
+  const [voiceOn, setVoiceOn] = useState(() => localStorage.getItem("kpc_voice_enabled") !== "off");
 
   const [driveTick, setDriveTick] = useState(0);
   const [recording, setRecording] = useState(false);
   const [lockedChars, setLockedChars] = useState(0);
   const [readInfo, setReadInfo] = useState(null);
+  const [phase, setPhase] = useState("idle");
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
@@ -87,56 +115,40 @@ export default function GateKiosk() {
 
   async function capture() {
     if (!regNo.trim()) return;
+    const target = regNo.trim().toUpperCase();
     setBusy(true);
     setRecording(true);
     setLockedChars(0);
     setReadInfo(null);
+    setScanResult(null);
+    setEntry(null);
+    setPlate(null);
+    setPhase("scanning");
     setDriveTick((t) => t + 1);
-    const target = regNo.trim().toUpperCase();
-    const iv = setInterval(() => setLockedChars((n) => Math.min(n + 1, target.length)), 135);
+
+    const iv = setInterval(() => setLockedChars((n) => Math.min(n + 1, target.length)), 220);
     try {
       const result = await yardApi.gateEntry({ regNo: target, depot: "MBA" });
       setEntry(result);
       setPlate(result.truck.regNo);
       localStorage.setItem("kpc_latest_token", result.token);
       setReadInfo({ ok: true, conf: 94 + Math.floor(Math.random() * 5) });
+      setPhase("confirmed");
+      speak(`Vehicle ${result.truck.regNo} verified against manifest. Token ${result.token}. Please proceed to the weigh bridge.`);
       pushAlert({
         tone: result.manifestVerified ? "success" : "warning",
-        title: "ANPR Token Issued",
+        title: "ANPR Match Confirmed",
         message: `${result.token} — ${result.truck.regNo}`,
       });
     } catch (err) {
       setReadInfo({ ok: false });
+      setPhase("rejected");
+      speak(`Unable to verify plate ${target}. ${err.message}`);
       pushAlert({ tone: "error", title: "Gate Capture Failed", message: err.message });
     } finally {
       clearInterval(iv);
       setLockedChars(target.length);
       setRecording(false);
-      setBusy(false);
-    }
-  }
-
-  const filtered = useMemo(
-    () => MANIFEST_PLATES.filter((p) => p.toLowerCase().includes(regNo.toLowerCase())),
-    [regNo],
-  );
-
-  async function capture() {
-    if (!regNo.trim()) return;
-    setBusy(true);
-    try {
-      const result = await yardApi.gateEntry({ regNo: regNo.trim().toUpperCase(), depot: "MBA" });
-      setEntry(result);
-      setPlate(result.truck.regNo);
-      localStorage.setItem("kpc_latest_token", result.token);
-      pushAlert({
-        tone: result.manifestVerified ? "success" : "warning",
-        title: "ANPR Token Issued",
-        message: `${result.token} — ${result.truck.regNo}`,
-      });
-    } catch (err) {
-      pushAlert({ tone: "error", title: "Gate Capture Failed", message: err.message });
-    } finally {
       setBusy(false);
     }
   }
@@ -151,12 +163,15 @@ export default function GateKiosk() {
       });
       setScanResult(result);
       if (result.allocation) {
+        const { assignment } = result.allocation;
+        speak(`Bay ${assignment.bayId} assigned. Estimated wait ${assignment.etaMinutes} minutes. Please proceed to gantry ${assignment.bayId.replace(/^G/i, "")}.`);
         pushAlert({
           tone: "success",
           title: "AI Bay Assigned",
-          message: `${entry.truck.regNo} → ${result.allocation.assignment.bayId} (ETA ~${result.allocation.assignment.etaMinutes} min)`,
+          message: `${entry.truck.regNo} → ${assignment.bayId} (ETA ~${assignment.etaMinutes} min)`,
         });
       } else {
+        speak(`Checkpoint ${checkpoint} verified. Continue forward.`);
         pushAlert({
           tone: checkpoint === "WEIGHBRIDGE" ? "warning" : "success",
           title: `RFID @ ${checkpoint}`,
@@ -164,26 +179,46 @@ export default function GateKiosk() {
         });
       }
     } catch (err) {
+      speak(`Scanner error at ${checkpoint}. ${err.message}`);
       pushAlert({ tone: "error", title: "Scanner Error", message: err.message });
     } finally {
       setBusy(false);
     }
   }
 
+  function toggleVoice() {
+    setVoiceOn((v) => {
+      const next = !v;
+      localStorage.setItem("kpc_voice_enabled", next ? "on" : "off");
+      if (next) speak("Voice guidance enabled.");
+      return next;
+    });
+  }
+
+  const filtered = useMemo(
+    () => MANIFEST_PLATES.filter((p) => p.toLowerCase().includes(regNo.toLowerCase())),
+    [regNo],
+  );
+
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Gate Kiosk — ANPR Entry</h1>
+          <h1 className="text-2xl font-bold">Gate Kiosk — Cinematic ANPR Entry</h1>
           <p className="text-sm text-slate-400">
-            Camera capture → manifest validation → digital token issuance
+            Slow-motion capture · OCR lock → manifest validation → digital token issuance
           </p>
         </div>
-        <StatusBadge pulse status={auth.ready ? "ACTIVE" : "WAITING"} />
+        <div className="flex items-center gap-2">
+          <StatusBadge pulse status={auth.ready ? "ACTIVE" : "WAITING"} />
+          <button onClick={toggleVoice} title="Toggle voice guidance" className="btn-ghost px-2 py-1.5">
+            {voiceOn ? <Volume2 className="h-4 w-4 text-emerald-300" /> : <VolumeX className="h-4 w-4 text-slate-500" />}
+          </button>
+        </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* ANPR camera simulation */}
+        {/* Cinematic ANPR camera */}
         <div className="card space-y-4">
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-300">
             <Camera className="h-4 w-4" /> ANPR Camera 01 — Main Gate
@@ -203,12 +238,10 @@ export default function GateKiosk() {
                 <ellipse cx="32" cy="29" rx="13" ry="12" fill="#ffffff" opacity="0.05" />
                 <rect x="6" y="15" width="116" height="27" rx="13.5" fill="url(#tank)" />
                 <rect x="6" y="15" width="116" height="8" rx="4" fill="#ffffff" opacity="0.18" />
-                <text x="64" y="34.5" textAnchor="middle" fontSize="14" fontWeight="800" fontStyle="italic"
-                  fill="#ffffff" fontFamily="ui-monospace, SFMono-Regular, monospace" letterSpacing="2">
+                <text x="64" y="34.5" textAnchor="middle" fontSize="14" fontWeight="800" fontStyle="italic" fill="#ffffff" fontFamily="ui-monospace, SFMono-Regular, monospace" letterSpacing="2">
                   KPC
                 </text>
-                <text x="64" y="39.5" textAnchor="middle" fontSize="5" fill="#ffffff" opacity="0.65"
-                  fontFamily="ui-monospace, SFMono-Regular, monospace" letterSpacing="1">
+                <text x="64" y="39.5" textAnchor="middle" fontSize="5" fill="#ffffff" opacity="0.65" fontFamily="ui-monospace, SFMono-Regular, monospace" letterSpacing="1">
                   KENYA PIPELINE CO.
                 </text>
                 <rect x="98" y="20" width="10" height="10" fill="#F59E0B" stroke="#111111" strokeWidth="1.2" />
@@ -235,8 +268,15 @@ export default function GateKiosk() {
                   <g key={i} transform={`translate(${w.x} ${w.y})`} className="anpr-wheel">
                     <circle r="8.5" fill="#0A0A0A" stroke="#1F2937" strokeWidth="1.5" />
                     {[0, 90, 180, 270].map((a) => (
-                      <line key={a} x1="0" y1="0" x2={Math.cos((a * Math.PI) / 180) * 6}
-                        y2={Math.sin((a * Math.PI) / 180) * 6} stroke="#475569" strokeWidth="1.5" />
+                      <line
+                        key={a}
+                        x1="0"
+                        y1="0"
+                        x2={Math.cos((a * Math.PI) / 180) * 6}
+                        y2={Math.sin((a * Math.PI) / 180) * 6}
+                        stroke="#475569"
+                        strokeWidth="1.5"
+                      />
                     ))}
                     <circle r="3.2" fill="#CBD5E1" />
                   </g>
@@ -255,14 +295,36 @@ export default function GateKiosk() {
               <span className={`h-2 w-2 rounded-full bg-white ${recording ? "animate-ping" : "opacity-70"}`} />
               REC{recording ? "" : " · IDLE"}
             </div>
+            {recording && (
+              <div className="absolute left-3 top-8 z-10 rounded bg-black/60 px-1.5 py-0.5 font-mono text-[9px] text-amber-200">
+                ⏪ SLOW-MO · 0.25×
+              </div>
+            )}
+
+            {phase === "confirmed" && (
+              <div className="absolute left-1/2 top-3 z-20 flex -translate-x-1/2 flex-col items-center gap-1 rounded-xl border border-emerald-400/60 bg-emerald-950/85 px-3 py-1.5 text-center backdrop-blur">
+                <p className="flex items-center gap-1.5 font-mono text-xs font-bold tracking-widest text-emerald-200">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-300" /> ANPR MATCH CONFIRMED
+                </p>
+                <p className="font-mono text-[9px] text-emerald-300/80">
+                  {readInfo?.conf}% CONF · {entry?.truck?.product ?? "—"} · MANIFEST {entry?.manifestVerified ? "✓" : "HOLD"}
+                </p>
+              </div>
+            )}
+            {phase === "rejected" && (
+              <div className="absolute left-1/2 top-3 z-20 flex -translate-x-1/2 items-center gap-1.5 rounded-xl border border-red-400/60 bg-red-950/85 px-3 py-1.5 backdrop-blur">
+                <XCircle className="h-3.5 w-3.5 text-red-300" />
+                <p className="font-mono text-xs font-bold tracking-widest text-red-200">READ FAILED</p>
+              </div>
+            )}
+
             <div className="absolute right-3 top-3 z-10 font-mono text-[10px] text-emerald-200/90">
               {now.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }).toUpperCase()}{" "}
               {now.toLocaleTimeString("en-GB")}
             </div>
-            <div className="absolute bottom-3 right-3 z-10 font-mono text-[9px] text-white/40">
-              CAM-01 · SBX-2200 · 4K OCR
-            </div>
+            <div className="absolute bottom-3 right-3 z-10 font-mono text-[9px] text-white/40">CAM-01 · SBX-2200 · 4K OCR</div>
 
+            <OcrReticle active={phase === "scanning"} confirmed={phase === "confirmed"} />
             <PlateReadout
               text={decodeTarget}
               locked={lockedChars}
@@ -327,25 +389,29 @@ export default function GateKiosk() {
               </div>
 
               <div className="space-y-2 text-sm">
-                <p className="flex justify-between"><span className="text-slate-400">Product</span><b>{entry.truck.product ?? "—"}</b></p>
-                <p className="flex justify-between"><span className="text-slate-400">Capacity</span><b>{entry.truck.capacityLiters?.toLocaleString()} L</b></p>
-                <p className="flex justify-between"><span className="text-slate-400">Driver</span><b>{entry.truck.driverName}</b></p>
-                <p className="flex justify-between"><span className="text-slate-400">Assigned Bay</span><b className="text-emerald-300">{entry.truck.bayId ?? "auto (at weighbridge)"}</b></p>
+                <p className="flex justify-between">
+                  <span className="text-slate-400">Product</span>
+                  <b>{entry.truck.product ?? "—"}</b>
+                </p>
+                <p className="flex justify-between">
+                  <span className="text-slate-400">Capacity</span>
+                  <b>{entry.truck.capacityLiters?.toLocaleString()} L</b>
+                </p>
+                <p className="flex justify-between">
+                  <span className="text-slate-400">Driver</span>
+                  <b>{entry.truck.driverName}</b>
+                </p>
+                <p className="flex justify-between">
+                  <span className="text-slate-400">Assigned Bay</span>
+                  <b className="text-emerald-300">{entry.truck.bayId ?? "auto (at weighbridge)"}</b>
+                </p>
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() => runCheckpoint("GATE")}
-                  disabled={busy}
-                  className="btn-ghost text-xs"
-                >
+                <button onClick={() => runCheckpoint("GATE")} disabled={busy} className="btn-ghost text-xs">
                   RFID Gate
                 </button>
-                <button
-                  onClick={() => runCheckpoint("WEIGHBRIDGE")}
-                  disabled={busy}
-                  className="btn-primary text-xs"
-                >
+                <button onClick={() => runCheckpoint("WEIGHBRIDGE")} disabled={busy} className="btn-primary text-xs">
                   Weighbridge → AI Bay Match
                 </button>
               </div>
@@ -385,7 +451,9 @@ export default function GateKiosk() {
             <div
               key={s.label}
               className={`flex items-center gap-2 rounded-lg border p-3 text-sm ${
-                s.done ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-200" : "border-white/10 bg-black/20 text-slate-500"
+                s.done
+                  ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-200"
+                  : "border-white/10 bg-black/20 text-slate-500"
               }`}
             >
               {s.done ? <CheckCircle2 className="h-4 w-4" /> : <ArrowRight className="h-4 w-4" />}

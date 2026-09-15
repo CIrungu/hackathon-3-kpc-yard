@@ -1,6 +1,9 @@
 import { runClosedLoopCycle, listOpenAnomalies, detector } from "../services/autoReroute.service.js";
 import { computeMetrics, throughputSeries } from "../services/analytics.service.js";
+import { getComplianceSummary, listOpenComplianceViolations, resolveComplianceViolation } from "../services/compliance.service.js";
+import { computeEsgScorecard } from "../services/esg_scorecard.service.js";
 import { ref } from "../config/firebase.js";
+import env from "../config/env.js";
 import { notifyEvent } from "../services/eventBus.js";
 import { getLiveBays, getLiveTrucks, allocateBayForTruck } from "../services/yard.service.js";
 
@@ -127,6 +130,63 @@ export async function manualAlloc(req, res, next) {
       timestamp: Date.now(),
     });
     return res.json({ success: true, data: result });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+/** ESG & carbon-spill risk scorecard for the executive suite. */
+export async function esg(req, res, next) {
+  try {
+    const data = await computeEsgScorecard();
+    return res.json({ success: true, data });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+/** Depot speed / transit compliance guard — fleet summary. */
+export async function compliance(req, res, next) {
+  try {
+    const data = await getComplianceSummary();
+    return res.json({ success: true, data });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+export async function complianceViolations(req, res, next) {
+  try {
+    const data = await listOpenComplianceViolations();
+    return res.json({ success: true, data });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+export async function resolveCompliance(req, res, next) {
+  try {
+    const data = await resolveComplianceViolation(req.params.signature, req.body.resolution, req.body.notes);
+    if (!data) return res.status(404).json({ success: false, error: { message: "Violation not found" } });
+    return res.json({ success: true, data });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+/** Integration health — which external channels are wired for the demo. */
+export async function integrations(req, res, next) {
+  try {
+    return res.json({
+      success: true,
+      data: {
+        pagerDuty: Boolean(env.alerts.pagerDutyUrl),
+        slack: Boolean(env.alerts.slackUrl),
+        sms: Boolean(env.sms.token && env.sms.baseUrl),
+        emulatorMode: env.firebase.emulatorMode,
+        nodeEnv: env.nodeEnv,
+      },
+    });
   } catch (err) {
     return next(err);
   }

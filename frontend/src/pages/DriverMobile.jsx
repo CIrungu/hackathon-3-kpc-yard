@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { Smartphone, RefreshCw, MapPin, BellRing, Clock } from "lucide-react";
+import { Smartphone, RefreshCw, MapPin, BellRing, Clock, Volume2, VolumeX } from "lucide-react";
 import { useDemoAuth } from "../hooks/useDemoAuth.js";
 import { useYardStream } from "../hooks/useYardStream.js";
 import { yardApi } from "../services/api.js";
+import { speak, isVoiceEnabled } from "../services/speech.js";
 import StatusBadge from "../components/StatusBadge.jsx";
 import { pushAlert } from "../components/AlertCenter.jsx";
 
@@ -12,25 +13,42 @@ export default function DriverMobile() {
   const [status, setStatus] = useState(null);
   const [alertFeed, setAlertFeed] = useState([]);
   const [error, setError] = useState(null);
+  const [voiceOn, setVoiceOn] = useState(() => isVoiceEnabled());
 
   useYardStream({
-    "gate:entry": (m) => pushSms("Token issued", `You were logged into the yard: ${m.payload.token}`),
+    "gate:entry": (m) => {
+      pushSms("Token issued", `You were logged into the yard: ${m.payload.token}`);
+    },
     "bay:assigned": (m) => {
       pushSms("Bay assigned", `Report to ${m.payload.bayId} — ETA ~${m.payload.etaMinutes} min`);
+      speak(`Attention driver. Bay ${m.payload.bayId} assigned. Estimated wait ${m.payload.etaMinutes} minutes. Proceed to gantry ${String(m.payload.bayId).replace(/^G/i, "")}.`);
       if (m.payload.token === token) refresh();
     },
     "queue:sequenced": () => {
       pushSms("Queue re-sequenced", "Closed-loop rerouting adjusted your queue position.");
+      speak("Your queue position has been updated by the control plane.");
       refresh();
     },
     "reroute:applied": () => pushSms("Route updated", "Your bay assignment changed — check latest status."),
     "sla:breach": (m) => pushSms("SLA alert", m.payload.message),
     "control:override": () => refresh(),
+    "preMovement:alert": (m) => {
+      pushSms("Pre-movement", `Gantry ${m.payload.bayId} nearly clear — prepare to move forward`);
+      speak(`Gantry ${m.payload.bayId} is nearly clear. Get ready to move forward to the gantry.`);
+    },
+    "compliance:violation": (m) => pushSms("Compliance notice", m.payload.message),
   });
 
   function pushSms(title, body) {
     setAlertFeed((prev) => [{ title, body, at: new Date().toLocaleTimeString() }, ...prev].slice(0, 8));
     pushAlert({ tone: "success", title, message: body });
+  }
+
+  function toggleVoice() {
+    const next = !voiceOn;
+    setVoiceOn(next);
+    localStorage.setItem("kpc_voice_enabled", next ? "on" : "off");
+    if (next) speak("Voice guidance enabled.");
   }
 
   async function refresh() {
@@ -66,7 +84,12 @@ export default function DriverMobile() {
           <h1 className="text-xl font-bold">Driver Mobile</h1>
           <p className="text-xs text-slate-400">Real-time token tracking & push alerts</p>
         </div>
-        <Smartphone className="h-5 w-5 text-emerald-300" />
+        <div className="flex items-center gap-2">
+          <button onClick={toggleVoice} title="Toggle voice guidance" className="btn-ghost px-2 py-1.5">
+            {voiceOn ? <Volume2 className="h-4 w-4 text-emerald-300" /> : <VolumeX className="h-4 w-4 text-slate-500" />}
+          </button>
+          <Smartphone className="h-5 w-5 text-emerald-300" />
+        </div>
       </div>
 
       <div className="card flex gap-2">

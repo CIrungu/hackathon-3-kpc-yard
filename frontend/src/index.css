@@ -93,16 +93,17 @@ body {
   filter: drop-shadow(0 16px 10px rgba(0, 0, 0, 0.55));
 }
 .anpr-truck.enter {
-  animation: anpr-drive 6s cubic-bezier(0.45, 0.05, 0.55, 0.95) forwards;
+  animation: anpr-drive 8s cubic-bezier(0.42, 0.0, 0.3, 1) forwards;
 }
 .anpr-truck.cruise {
   animation: anpr-idle 9.5s linear infinite;
 }
 @keyframes anpr-drive {
   0%   { left: -44%; }
-  24%  { left: 2%; }
-  40%  { left: 24%; }
-  54%  { left: 24%; }
+  14%  { left: 3%; }
+  34%  { left: 23%; }
+  58%  { left: 27%; }   /* hold centre for slow-mo OCR lock */
+  74%  { left: 27%; }
   100% { left: 120%; }
 }
 @keyframes anpr-idle {
@@ -168,3 +169,64 @@ body {
 .anpr-corner.tr { top: 8px; right: 8px; border-top: 2px solid rgba(16,185,129,.9); border-right: 2px solid rgba(16,185,129,.9); }
 .anpr-corner.bl { bottom: 8px; left: 8px; border-bottom: 2px solid rgba(16,185,129,.9); border-left: 2px solid rgba(16,185,129,.9); }
 .anpr-corner.br { bottom: 8px; right: 8px; border-bottom: 2px solid rgba(16,185,129,.9); border-right: 2px solid rgba(16,185,129,.9); }
+
+/* ---- Glassmorphism executive surfaces ---- */
+.glass {
+  @apply relative overflow-hidden rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl;
+}
+.glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(135deg, rgba(255,255,255,0.09) 0%, rgba(255,255,255,0) 40%);
+}
+.glass-outline {
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.08),
+    0 8px 32px rgba(0,0,0,0.35);
+}
+
+/* slow shimmer across the hero band */
+.hero-sheen {
+  background-image: linear-gradient(110deg, transparent 20%, rgba(255,255,255,0.06) 40%, rgba(255,255,255,0.12) 50%, rgba(255,255,255,0.06) 60%, transparent 80%);
+  background-size: 220% 100%;
+  animation: sheen-slide 6s ease-in-out infinite;
+}
+@keyframes sheen-slide {
+  0%   { background-position: 180% 0; }
+  100% { background-position: -40% 0; }
+}
+
+/* pulse halo behind a "live" dot */
+.live-dot {
+  position: relative;
+  display: inline-block;
+}
+.live-dot::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 9999px;
+  border: 2px solid currentColor;
+  opacity: 0.5;
+  animation: live-ping 1.6s cubic-bezier(0,0,0.2,1) infinite;
+}
+@keyframes live-ping {
+  75%, 100% { transform: scale(1.9); opacity: 0; }
+}
+
+/* count-up tick separators */
+.tick-up {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ESG spill-risk meter fill transition */
+.risk-track {
+  transition: background-color 0.9s ease, box-shadow 0.9s ease;
+}
+
+/* compliance segment bar stripes */
+.seg-stripes {
+  background-image: repeating-linear-gradient(45deg, rgba(255,255,255,0.06) 0 6px, transparent 6px 12px);
+}

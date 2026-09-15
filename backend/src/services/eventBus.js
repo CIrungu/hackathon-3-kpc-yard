@@ -14,6 +14,7 @@ export const STREAM_EVENTS = new Set([
   "gate:entry",
   "bay:assigned",
   "loading:started",
+  "loading:progress",
   "loading:completed",
   "checkpoint:crossed",
   "anomaly:detected",
@@ -21,6 +22,8 @@ export const STREAM_EVENTS = new Set([
   "queue:sequenced",
   "control:override",
   "sla:breach",
+  "preMovement:alert",
+  "compliance:violation",
 ]);
 
 export function notifyEvent(event, payload) {

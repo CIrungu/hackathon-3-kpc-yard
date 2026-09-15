@@ -11,6 +11,11 @@ import {
   throughput,
   yardSnapshot,
   manualAlloc,
+  esg,
+  compliance,
+  complianceViolations,
+  resolveCompliance,
+  integrations,
 } from "../controllers/controlPlane.controller.js";
 
 const router = Router();
@@ -33,5 +38,10 @@ router.post("/resequence", manager, overrideResequence);
 router.post("/bay/:bayId/health", manager, bayHealthOverride);
 router.post("/allocate", manager, manualAlloc);
 router.get("/snapshot", manager, yardSnapshot);
+router.get("/esg", manager, esg);
+router.get("/compliance", manager, compliance);
+router.get("/compliance/violations", manager, complianceViolations);
+router.post("/compliance/violations/:signature/resolve", manager, resolveCompliance);
+router.get("/integrations", manager, integrations);
 
 export default router;
