@@ -30,7 +30,7 @@ const schema = Joi.object({
   YARD_OPERATING_HOURS_PER_DAY: Joi.number().min(1).max(24).default(24),
   OPTIMAL_TURNAROUND_HOURS: Joi.number().min(0.1).default(4.5),
 
-  SIM_MINUTES_PER_LOOP: Joi.number().min(0).default(300),
+  SIM_MINUTES_PER_LOOP: Joi.number().min(0).default(180),
   SIMULATE_PUMP_FLOW: Joi.boolean().truthy("true").falsy("false").default(true),
   PRE_MOVEMENT_ALERT_MINUTES: Joi.number().min(0).default(5),
   CO2_IDLE_KG_PER_HOUR: Joi.number().min(0).default(2.68),
