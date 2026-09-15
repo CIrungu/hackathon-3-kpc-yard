@@ -1,7 +1,7 @@
 services:
   # Backend Web Service (Node.js API)
   - type: web
-    name: kpc-yard-backend
+    name: hackathon-3-kpc-yard
     env: node
     plan: free
     region: oregon
@@ -44,7 +44,7 @@ services:
       - key: VITE_API_URL
         fromService:
           type: web
-          name: kpc-yard-backend
+          name: hackathon-3-kpc-yard
           property: host
           envVarKey: VITE_API_URL
           transform: "https://${host}/api"
