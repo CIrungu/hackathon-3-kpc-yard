@@ -13,11 +13,15 @@ import {
   Send,
   Sparkles,
   Radio,
+  AlertTriangle,
+  Wrench,
+  RotateCcw,
+  ShieldAlert,
 } from "lucide-react";
 import { useDemoAuth } from "../hooks/useDemoAuth.js";
 import { useYardStream } from "../hooks/useYardStream.js";
 import { yardApi } from "../services/api.js";
-import { speak } from "../services/speech.js";
+import { speak, speakAlert } from "../services/speech.js";
 import StatusBadge from "../components/StatusBadge.jsx";
 import { pushAlert } from "../components/AlertCenter.jsx";
 
@@ -34,7 +38,11 @@ const MANIFEST_PLATES = [
   "KKH 135E",
   "KMJ 864F",
   "KNK 753G",
+  "KDD 001D",
 ];
+
+// KDD 001D is assigned Staging Yard 2 (not a gantry directly).
+const YARD2_TRUCK = "KDD 001D";
 
 const rnd = (chars) => chars[Math.floor(Math.random() * chars.length)];
 
@@ -66,7 +74,7 @@ function PlateReadout({ text, locked, status, conf }) {
               </span>
             );
           return (
-            <span key={i} className="opacity-60">
+            <span key={i}>
               {i % 2 ? rnd("1234567890") : rnd("ABCDEFGHJKMNPQRSTUVWXZ")}
             </span>
           );
@@ -97,30 +105,97 @@ function OcrReticle({ active, confirmed }) {
   );
 }
 
+// Load persisted state across dashboard switches
+function loadSavedKioskState() {
+  try {
+    const raw = localStorage.getItem("kpc_gate_kiosk_state");
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function loadSavedKioskHistory() {
+  try {
+    const raw = localStorage.getItem("kpc_gate_kiosk_history");
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
 export default function GateKiosk() {
   const auth = useDemoAuth("gate-officer", "Gate Operator");
-  const [regNo, setRegNo] = useState("");
-  const [plate, setPlate] = useState(null);
-  const [entry, setEntry] = useState(null);
+  const savedState = useMemo(() => loadSavedKioskState(), []);
+  
+  const [regNo, setRegNo] = useState(savedState.regNo || "");
+  const [plate, setPlate] = useState(savedState.plate || null);
+  const [entry, setEntry] = useState(savedState.entry || null);
   const [busy, setBusy] = useState(false);
-  const [scanResult, setScanResult] = useState(null);
+  const [scanResult, setScanResult] = useState(savedState.scanResult || null);
   const [voiceOn, setVoiceOn] = useState(() => localStorage.getItem("kpc_voice_enabled") !== "off");
-  const [smsPhone, setSmsPhone] = useState("");
-  const [smsResult, setSmsResult] = useState(null);
-  const [weightResult, setWeightResult] = useState(null);
+  const [smsPhone, setSmsPhone] = useState(savedState.smsPhone || "");
+  const [smsResult, setSmsResult] = useState(savedState.smsResult || null);
+  const [weightResult, setWeightResult] = useState(savedState.weightResult || null);
 
   // Gantry filled & exit states
-  const [gantryStatus, setGantryStatus] = useState("IDLE"); // IDLE | LOADING | FILLED | EXITED
-  const [spokenMessage, setSpokenMessage] = useState(null);
-  const [exitDetection, setExitDetection] = useState(null);
+  const [gantryStatus, setGantryStatus] = useState(savedState.gantryStatus || "IDLE"); // IDLE | LOADING | FILLED | EXITED
+  const [spokenMessage, setSpokenMessage] = useState(savedState.spokenMessage || null);
+  const [exitDetection, setExitDetection] = useState(savedState.exitDetection || null);
   const [countdown, setCountdown] = useState(null);
+  const [stalledAlert, setStalledAlert] = useState(savedState.stalledAlert || null);
+
+  // Yard 2 Staging state for KDD 001D
+  const [yard2Assigned, setYard2Assigned] = useState(savedState.yard2Assigned || false);
+  const [yard2DriverAlerted, setYard2DriverAlerted] = useState(savedState.yard2DriverAlerted || false);
+  const [yard2StalledFired, setYard2StalledFired] = useState(savedState.yard2StalledFired || false);
+  const [yard2PreAlertCountdown, setYard2PreAlertCountdown] = useState(null); // seconds until 5-min pre-alert fires
+  const [yard2StalledCountdown, setYard2StalledCountdown] = useState(null); // seconds until 3-min breakdown fires
+
+  const [scanHistory, setScanHistory] = useState(() => loadSavedKioskHistory());
 
   const [driveTick, setDriveTick] = useState(0);
   const [recording, setRecording] = useState(false);
   const [lockedChars, setLockedChars] = useState(0);
-  const [readInfo, setReadInfo] = useState(null);
-  const [phase, setPhase] = useState("idle");
+  const [readInfo, setReadInfo] = useState(savedState.readInfo || null);
+  const [phase, setPhase] = useState(savedState.phase || "idle");
   const [now, setNow] = useState(() => new Date());
+
+  // Save kiosk state to localStorage for persistence across tab switches
+  useEffect(() => {
+    try {
+      const snapshot = {
+        regNo,
+        plate,
+        entry,
+        scanResult,
+        smsPhone,
+        smsResult,
+        weightResult,
+        gantryStatus,
+        spokenMessage,
+        exitDetection,
+        readInfo,
+        phase,
+        stalledAlert,
+        yard2Assigned,
+        yard2DriverAlerted,
+        yard2StalledFired,
+      };
+      localStorage.setItem("kpc_gate_kiosk_state", JSON.stringify(snapshot));
+    } catch {
+      /* ignore */
+    }
+  }, [regNo, plate, entry, scanResult, smsPhone, smsResult, weightResult, gantryStatus, spokenMessage, exitDetection, readInfo, phase, stalledAlert, yard2Assigned, yard2DriverAlerted, yard2StalledFired]);
+
+  // Save history to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem("kpc_gate_kiosk_history", JSON.stringify(scanHistory));
+    } catch {
+      /* ignore */
+    }
+  }, [scanHistory]);
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
@@ -139,6 +214,46 @@ export default function GateKiosk() {
     }, 1000);
     return () => clearTimeout(timer);
   }, [countdown]);
+
+  // Yard 2 pre-alert countdown (5 minutes = 300s, demo: 15s)
+  useEffect(() => {
+    if (yard2PreAlertCountdown === null) return;
+    if (yard2PreAlertCountdown <= 0) {
+      setYard2PreAlertCountdown(null);
+      if (!yard2DriverAlerted) {
+        setYard2DriverAlerted(true);
+        const driverName = entry?.truck?.driverName ?? "Driver";
+        const preMsg = `Attention ${driverName}! Your vehicle KDD 001D is staged in Yard 2. ` +
+          `Gantry G2 will be available in approximately 3 minutes. ` +
+          `Please prepare to move to Gantry 2 when directed.`;
+        setSpokenMessage(preMsg);
+        speak(preMsg);
+        pushAlert({ tone: "warning", title: "⏰ Yard 2 Pre-Alert — Driver Notification", message: `KDD 001D: Gantry G2 ready in ~3 min` });
+        // Start 3-minute stalled countdown (demo: 18s)
+        setYard2StalledCountdown(18);
+      }
+      return;
+    }
+    const t = setTimeout(() => setYard2PreAlertCountdown((p) => (p !== null ? p - 1 : null)), 1000);
+    return () => clearTimeout(t);
+  }, [yard2PreAlertCountdown, yard2DriverAlerted, entry]);
+
+  // Yard 2 stalled countdown (3 minutes after pre-alert, demo: 18s)
+  useEffect(() => {
+    if (yard2StalledCountdown === null) return;
+    if (yard2StalledCountdown <= 0) {
+      setYard2StalledCountdown(null);
+      if (!yard2StalledFired) {
+        setYard2StalledFired(true);
+        // Auto-trigger breakdown alert
+        triggerYard2BreakdownAlert();
+      }
+      return;
+    }
+    const t = setTimeout(() => setYard2StalledCountdown((p) => (p !== null ? p - 1 : null)), 1000);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [yard2StalledCountdown, yard2StalledFired]);
 
   useYardStream({
     "loading:completed": (m) => {
@@ -173,6 +288,96 @@ export default function GateKiosk() {
 
   const decodeTarget = (regNo.trim() || plate || "").toUpperCase();
 
+  function handleResetForm() {
+    setRegNo("");
+    setPlate(null);
+    setEntry(null);
+    setScanResult(null);
+    setSmsResult(null);
+    setWeightResult(null);
+    setGantryStatus("IDLE");
+    setSpokenMessage(null);
+    setExitDetection(null);
+    setReadInfo(null);
+    setPhase("idle");
+    setStalledAlert(null);
+    setYard2Assigned(false);
+    setYard2DriverAlerted(false);
+    setYard2StalledFired(false);
+    setYard2PreAlertCountdown(null);
+    setYard2StalledCountdown(null);
+    localStorage.removeItem("kpc_gate_kiosk_state");
+  }
+
+  // Auto-trigger breakdown alert for Yard 2 KDD 001D
+  async function triggerYard2BreakdownAlert() {
+    const bayId = "YARD-2";
+    try {
+      const data = await yardApi.reportStalledTruck({
+        truckId: entry?.truck?.id || null,
+        bayId,
+        reason: "YARD2_STALLED_NO_MOVEMENT_3MIN",
+      }).catch(() => ({
+        regNo: "KDD 001D",
+        bayId,
+        voiceAnnouncement: "Attention Response Team! Vehicle KDD 001D has been stationary in Staging Yard 2 for over 3 minutes without moving to Gantry G2. Please dispatch a team to Yard 2 immediately to investigate a possible mechanical breakdown. Alternate vehicle has been queued to Gantry G2.",
+        reallocatedRegNo: "KMJ 864F",
+        truckId: null,
+      }));
+      setStalledAlert(data);
+      speakAlert(data.voiceAnnouncement);
+      pushAlert({
+        tone: "error",
+        title: "🚨 Yard 2 Breakdown Alert — Response Team Dispatched",
+        message: `KDD 001D stalled in Yard 2. Alternate: ${data.reallocatedRegNo ?? "queued"}`,
+      });
+    } catch (err) {
+      pushAlert({ tone: "error", title: "Yard 2 Breakdown Error", message: err.message });
+    }
+  }
+
+  async function triggerStalledVehicleAlert() {
+    const currentPlate = entry?.truck?.regNo || regNo.trim() || "KMJ 864F";
+    const currentBay = scanResult?.allocation?.assignment?.bayId || entry?.truck?.bayId || "G2";
+    setBusy(true);
+
+    try {
+      const data = await yardApi.reportStalledTruck({
+        truckId: entry?.truck?.id || null,
+        bayId: currentBay,
+        reason: "MECHANICAL_BREAKDOWN_3MIN_TIMEOUT",
+      });
+
+      setStalledAlert(data);
+      speakAlert(data.voiceAnnouncement);
+
+      pushAlert({
+        tone: "error",
+        title: "🚨 Response Team Dispatched (Yard Mechanical Breakdown)",
+        message: `${data.regNo} stalled en route to ${data.bayId}. Bay reallocated${data.reallocatedRegNo ? ` to ${data.reallocatedRegNo}` : ""}.`,
+      });
+    } catch (err) {
+      pushAlert({ tone: "error", title: "Breakdown Alert Error", message: err.message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function resolveStalledVehicle() {
+    if (!stalledAlert?.truckId) return;
+    setBusy(true);
+    try {
+      await yardApi.resolveStalledTruck(stalledAlert.truckId);
+      setStalledAlert(null);
+      speak("Response team confirmed vehicle repair complete. Truck re-queued into yard control plane.");
+      pushAlert({ tone: "success", title: "Vehicle Repaired", message: `${stalledAlert.regNo} re-queued.` });
+    } catch (err) {
+      pushAlert({ tone: "error", title: "Resolution Error", message: err.message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function capture() {
     if (!regNo.trim()) return;
     const target = regNo.trim().toUpperCase();
@@ -187,6 +392,7 @@ export default function GateKiosk() {
     setCountdown(null);
     setSpokenMessage(null);
     setExitDetection(null);
+    setStalledAlert(null);
     setPhase("scanning");
     setDriveTick((t) => t + 1);
     setSmsResult(null);
@@ -201,6 +407,19 @@ export default function GateKiosk() {
       localStorage.setItem("kpc_latest_token", result.token);
       setReadInfo({ ok: true, conf: 94 + Math.floor(Math.random() * 5) });
       setPhase("confirmed");
+
+      // Append to scan history
+      setScanHistory((prev) => [
+        {
+          token: result.token,
+          regNo: result.truck.regNo,
+          time: new Date().toLocaleTimeString(),
+          driverName: result.truck.driverName,
+          verified: result.manifestVerified,
+        },
+        ...prev.filter((h) => h.token !== result.token).slice(0, 9),
+      ]);
+
       const msg = `Vehicle ${result.truck.regNo} verified against manifest. Token ${result.token}. Please proceed to the weigh bridge.`;
       setSpokenMessage(msg);
       speak(msg);
@@ -225,6 +444,7 @@ export default function GateKiosk() {
   async function runCheckpoint(checkpoint) {
     if (!entry) return;
     setBusy(true);
+    const isKdd001d = (entry.truck.regNo || "").toUpperCase().trim() === YARD2_TRUCK;
     try {
       const checkpointPayload = { token: entry.truck.token, checkpoint };
       if (checkpoint === "WEIGHBRIDGE" && entry.truck.expectedGrossWeightKg) {
@@ -234,6 +454,27 @@ export default function GateKiosk() {
       const result = await yardApi.scanCheckpoint(checkpointPayload);
       setScanResult(result);
       if (result.weight) setWeightResult(result.weight);
+
+      // Special flow: KDD 001D at weighbridge → Staging Yard 2
+      if (checkpoint === "WEIGHBRIDGE" && isKdd001d) {
+        const yard2Msg = `Weighbridge verified. Vehicle KDD 001D, weight is within tolerance. ` +
+          `You have been assigned to Staging Yard 2. Please proceed to Yard 2 and await further instructions. ` +
+          `You will be notified when Gantry 2 becomes available.`;
+        setSpokenMessage(yard2Msg);
+        speak(yard2Msg);
+        setYard2Assigned(true);
+        setYard2DriverAlerted(false);
+        setYard2StalledFired(false);
+        // Start 5-min pre-alert countdown (demo: 15 seconds)
+        setYard2PreAlertCountdown(15);
+        pushAlert({
+          tone: "warning",
+          title: "⚡ Staging Yard 2 Assigned — KDD 001D",
+          message: "KDD 001D → Staging Yard 2. Gantry G2 in ~5 min. Driver pre-alert active.",
+        });
+        return;
+      }
+
       if (result.allocation) {
         const { assignment } = result.allocation;
         const msg = `Bay ${assignment.bayId} assigned. Estimated wait ${assignment.etaMinutes} minutes. Please proceed to gantry ${assignment.bayId.replace(/^G/i, "")}.`;
@@ -364,23 +605,86 @@ export default function GateKiosk() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">Gate Kiosk — ANPR & Gantry Control</h1>
           <p className="text-sm text-slate-400">
             ANPR entry capture → weighbridge → AI bay assignment → Gantry filled & voice departure
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <StatusBadge pulse status={auth.ready ? "ACTIVE" : "WAITING"} />
-          <button onClick={toggleVoice} title="Toggle voice guidance" className="btn-ghost px-2 py-1.5">
-            {voiceOn ? <Volume2 className="h-4 w-4 text-emerald-300" /> : <VolumeX className="h-4 w-4 text-slate-500" />}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={handleResetForm}
+            className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/80 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-700"
+            title="Clear current screen for next vehicle (keeps history)"
+          >
+            <RotateCcw className="h-3.5 w-3.5 text-slate-400" />
+            <span>Scan Next Vehicle</span>
           </button>
+
+          <button
+            onClick={triggerStalledVehicleAlert}
+            disabled={busy}
+            className="flex items-center gap-1.5 rounded-lg border border-red-500/40 bg-red-950/60 px-3 py-1.5 text-xs font-bold text-red-300 transition hover:bg-red-900/60 hover:border-red-500/70"
+            title="Simulate 3-minute stalled vehicle breakdown and trigger response team voice alert"
+          >
+            <ShieldAlert className="h-3.5 w-3.5 text-red-400 animate-pulse" />
+            <span>Simulate 3-Min Breakdown</span>
+          </button>
+
+          <div className="flex items-center gap-2 border-l border-white/10 pl-2">
+            <StatusBadge pulse status={auth.ready ? "ACTIVE" : "WAITING"} />
+            <button onClick={toggleVoice} title="Toggle voice guidance" className="btn-ghost px-2 py-1.5">
+              {voiceOn ? <Volume2 className="h-4 w-4 text-emerald-300" /> : <VolumeX className="h-4 w-4 text-slate-500" />}
+            </button>
+          </div>
         </div>
       </div>
 
+      {/* Response Team Breakdown Siren Alert Banner */}
+      {stalledAlert && (
+        <div className="relative overflow-hidden rounded-xl border border-red-500/60 bg-gradient-to-r from-red-950/90 via-slate-900 to-red-950 p-4 shadow-xl animate-in fade-in duration-300">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div className="rounded-lg bg-red-500/20 p-2 text-red-400">
+                <Wrench className="h-6 w-6 animate-bounce" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="flex h-2.5 w-2.5 rounded-full bg-red-500 animate-ping" />
+                  <p className="text-xs uppercase font-extrabold tracking-wider text-red-400">
+                    🚨 Response Team Dispatched · Yard Mechanical Breakdown Alert
+                  </p>
+                </div>
+                <p className="mt-1 text-sm font-semibold text-white">
+                  Vehicle <span className="font-mono text-emerald-300">{stalledAlert.regNo}</span> stalled en route to Gantry <span className="font-mono text-emerald-300">{stalledAlert.bayId}</span> (&gt;3 min timeout).
+                </p>
+                <p className="mt-0.5 text-xs text-slate-300">
+                  {stalledAlert.voiceAnnouncement}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => speakAlert(stalledAlert.voiceAnnouncement)}
+                className="rounded-lg border border-red-500/30 bg-red-900/40 px-3 py-1.5 text-xs font-semibold text-red-200 hover:bg-red-800/50"
+              >
+                <Volume2 className="mr-1 inline h-3.5 w-3.5" /> Re-play Siren Voice
+              </button>
+              <button
+                onClick={resolveStalledVehicle}
+                disabled={busy}
+                className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-bold text-slate-950 hover:bg-emerald-400 shadow-md"
+              >
+                Resolve & Re-Queue Vehicle
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Live Voice Broadcast Banner when talking */}
-      {spokenMessage && (
+      {spokenMessage && !stalledAlert && (
         <div className="relative overflow-hidden rounded-xl border border-emerald-400/40 bg-gradient-to-r from-emerald-950/80 via-slate-900 to-black p-4 text-xs shadow-lg animate-in fade-in duration-300">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-3">
@@ -404,6 +708,39 @@ export default function GateKiosk() {
             >
               <Volume2 className="mr-1 h-3.5 w-3.5" /> Re-play Speech
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Persistent Recent Scans Bar */}
+      {scanHistory.length > 0 && (
+        <div className="rounded-xl border border-white/10 bg-slate-900/60 p-3 backdrop-blur-md">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+              <ScanLine className="h-3.5 w-3.5 text-emerald-400" /> Scanned Tickets Session History
+            </p>
+            <span className="text-[10px] text-slate-500">Persisted across dashboards</span>
+          </div>
+          <div className="flex items-center gap-2 overflow-x-auto pb-1">
+            {scanHistory.map((h, i) => (
+              <div
+                key={i}
+                onClick={() => {
+                  setRegNo(h.regNo);
+                  capture();
+                }}
+                className={`flex shrink-0 cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-1 text-xs transition ${
+                  entry?.truck?.regNo === h.regNo
+                    ? "border-emerald-500 bg-emerald-500/20 text-emerald-300 font-bold"
+                    : "border-white/10 bg-slate-800/70 text-slate-300 hover:border-emerald-500/40"
+                }`}
+                title={`Click to reload scan for ${h.regNo}`}
+              >
+                <span className="font-mono text-white">{h.regNo}</span>
+                <span className="text-[10px] text-slate-400">({h.time})</span>
+                {h.verified && <CheckCircle2 className="h-3 w-3 text-emerald-400" />}
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -589,7 +926,94 @@ export default function GateKiosk() {
                 <button onClick={() => runCheckpoint("WEIGHBRIDGE")} disabled={busy} className="btn-primary text-xs">
                   Weighbridge → AI Bay Match
                 </button>
+
+                {/* ── ALARM VOICE BUTTON (between Weighbridge & Gantry) ── */}
+                <button
+                  onClick={triggerYard2BreakdownAlert}
+                  disabled={busy}
+                  title="Manually trigger response-team breakdown siren for Yard 2"
+                  className="flex items-center gap-1.5 rounded-lg border border-orange-500/50 bg-orange-950/60 px-3 py-1.5 text-xs font-bold text-orange-300 transition hover:bg-orange-900/70 hover:border-orange-400"
+                >
+                  <ShieldAlert className="h-3.5 w-3.5 text-orange-400 animate-pulse" />
+                  🔊 Yard 2 Alarm Voice
+                </button>
               </div>
+
+              {/* ── Yard 2 Staging Panel for KDD 001D ── */}
+              {yard2Assigned && (
+                <div className="rounded-lg border border-amber-500/40 bg-amber-950/20 p-3 space-y-3 animate-in fade-in duration-300">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                      <Wrench className="h-4 w-4" /> Staging Yard 2 — KDD 001D
+                    </p>
+                    <span className={`chip text-[10px] font-mono border ${
+                      yard2StalledFired
+                        ? "border-red-400 bg-red-500/20 text-red-300 animate-pulse"
+                        : yard2DriverAlerted
+                        ? "border-orange-400 bg-orange-500/20 text-orange-200"
+                        : "border-amber-400 bg-amber-500/20 text-amber-200"
+                    }`}>
+                      {yard2StalledFired ? "🚨 BREAKDOWN ALERT" : yard2DriverAlerted ? "⏳ Move to Gantry G2" : "🟡 Awaiting Gantry G2"}
+                    </span>
+                  </div>
+
+                  {/* 5-min pre-alert countdown */}
+                  {yard2PreAlertCountdown !== null && (
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[11px] text-amber-300 font-mono">
+                        <span>Driver pre-alert fires in (demo ×20 speed)</span>
+                        <span className="font-bold">{yard2PreAlertCountdown}s</span>
+                      </div>
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+                        <div
+                          className="h-full bg-gradient-to-r from-amber-500 to-yellow-400 transition-all duration-1000"
+                          style={{ width: `${Math.max(0, Math.min(100, ((15 - yard2PreAlertCountdown) / 15) * 100))}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 3-min stalled countdown after driver alerted */}
+                  {yard2StalledCountdown !== null && (
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[11px] text-orange-300 font-mono">
+                        <span>🚨 Response team alert fires in (demo ×10 speed)</span>
+                        <span className="font-bold animate-pulse">{yard2StalledCountdown}s</span>
+                      </div>
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+                        <div
+                          className="h-full bg-gradient-to-r from-orange-600 to-red-500 transition-all duration-1000"
+                          style={{ width: `${Math.max(0, Math.min(100, ((18 - yard2StalledCountdown) / 18) * 100))}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <p className="text-[11px] text-slate-400">
+                    KDD 001D is staged in Yard 2. System will notify the driver when Gantry G2 is ready (~5 min).
+                    If the vehicle does not advance within 3 minutes after notification, the response team is auto-alerted.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={triggerYard2BreakdownAlert}
+                      disabled={busy || yard2StalledFired}
+                      className="flex items-center gap-1.5 rounded-lg border border-red-500/40 bg-red-950/60 px-3 py-1.5 text-xs font-bold text-red-300 hover:bg-red-900/60"
+                    >
+                      <ShieldAlert className="h-3.5 w-3.5 animate-pulse" />
+                      Manual Breakdown Alert
+                    </button>
+                    {yard2StalledFired && (
+                      <button
+                        onClick={() => { setYard2Assigned(false); setYard2StalledFired(false); setYard2DriverAlerted(false); }}
+                        disabled={busy}
+                        className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-bold text-slate-950 hover:bg-emerald-400"
+                      >
+                        Clear Yard 2 Assignment
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Gantry Loading & Filled Talking Controls */}
               {scanResult?.allocation && (

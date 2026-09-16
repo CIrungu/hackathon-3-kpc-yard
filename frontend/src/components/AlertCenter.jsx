@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, X } from "lucide-react";
+import { AlertTriangle, X, ShieldAlert } from "lucide-react";
+import { useYardStream } from "../hooks/useYardStream.js";
+import { speakAlert } from "../services/speech.js";
 
 let pushCounter = 0;
 const listeners = new Set();
@@ -13,10 +15,24 @@ export function pushAlert(alert) {
 export default function AlertCenter() {
   const [alerts, setAlerts] = useState([]);
 
+  useYardStream({
+    "truck:stalled": (m) => {
+      const payload = m.payload || {};
+      if (payload.voiceAnnouncement) {
+        speakAlert(payload.voiceAnnouncement);
+      }
+      pushAlert({
+        tone: "error",
+        title: "🚨 Response Team Alert — Mechanical Breakdown",
+        message: `${payload.regNo || "Vehicle"} stalled en route to Bay ${payload.bayId || "Gantry"}. Bay reallocated.`,
+      });
+    },
+  });
+
   useEffect(() => {
     const add = (alert) => {
       setAlerts((prev) => [alert, ...prev].slice(0, 5));
-      const t = setTimeout(() => setAlerts((prev) => prev.filter((a) => a.id !== alert.id)), 9000);
+      const t = setTimeout(() => setAlerts((prev) => prev.filter((a) => a.id !== alert.id)), 12000);
       t.unref?.();
     };
     listeners.add(add);

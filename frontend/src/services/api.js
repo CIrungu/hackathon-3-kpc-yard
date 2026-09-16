@@ -122,4 +122,6 @@ export const yardApi = {
   getRecentDepartures: (limit = 10) => api.get(`/gantry/recent-departures?limit=${limit}`).then((r) => r.data.data),
   getExitAudit: (limit = 50) => api.get(`/gantry/audit?limit=${limit}`).then((r) => r.data.data),
   manualExitClearance: (payload) => api.post("/gantry/manual-exit", payload).then((r) => r.data.data),
+  reportStalledTruck: (payload = {}) => api.post("/control-plane/stalled-truck", payload).then((r) => r.data.data),
+  resolveStalledTruck: (truckId) => api.post(`/control-plane/stalled-truck/${truckId}/resolve`).then((r) => r.data.data),
 };
